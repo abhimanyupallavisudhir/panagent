@@ -9,7 +9,7 @@ Supported paths:
 | Claude Code JSONL | ✓ | ✓ | ✓ | ✓ |
 | Codex JSONL | ✓ | ✓ | ✓ | ✓ |
 | ChatGPT public share | ✓ | ✓ | ✓ | ✓ |
-| Claude public share/browser export | ✓ | ✓ | ✓ | ✓ |
+| Claude public share (browser-assisted when challenged) | ✓ | ✓ | ✓ | ✓ |
 
 The native formats are undocumented and change over time. The generated files match the currently tested Claude Code message/tool structure and Codex CLI 0.142.5 rollout structure, but provider-specific state such as sandboxes, approvals, file snapshots, encrypted reasoning, token accounting, and compaction cannot always be recreated.
 
@@ -20,6 +20,13 @@ Python 3.10 or later is required. Runtime dependencies are deliberately limited 
 ```bash
 python -m pip install .
 panagent --help
+```
+
+Plain ChatGPT shares need no extra dependency. For automatic fallback to a real browser when Claude presents a challenge:
+
+```bash
+python -m pip install 'panagent[browser]'
+playwright install chromium
 ```
 
 For development without installing:
@@ -42,7 +49,10 @@ panagent convert session.jsonl --to ir -o conversation.agent.json
 
 # Public shares
 panagent convert 'https://chatgpt.com/share/…' --to ir -o conversation.agent.json
-panagent convert 'https://claude.ai/share/…' --to codex -o imported.jsonl
+panagent convert 'https://claude.ai/share/…' --to codex --browser headed -o imported.jsonl
+
+# Reuse an already-open Chrome profile/session through its debugging endpoint
+panagent convert 'https://claude.ai/share/…' --to codex --cdp-url http://127.0.0.1:9222 -o imported.jsonl
 
 # A readable transcript
 panagent convert conversation.agent.json --to markdown -o conversation.md
@@ -78,11 +88,11 @@ Generated Claude and Codex JSONL embeds the same source/provenance information u
 
 Expected loss includes provider-only continuation state. For public shares, the converter always notes that hidden instructions, original uploads, alternative branches, and structured tools may not be present in the snapshot. See [the IR reference](docs/ir.md) for the schema.
 
-## Claude anti-bot fallback
+## Claude browser acquisition
 
-Claude public shares can return a Cloudflare challenge even though the URL is public. A challenge page is an acquisition failure—not a successfully parsed empty conversation. `panagent` exits with status 2 and points to [the browser/export fallback](docs/browser-export.md).
+Claude public shares can return a Cloudflare challenge even though the URL is public. A challenge page is never treated as an empty conversation. With the `browser` extra installed, `--browser headed` opens a dedicated Chrome/Chromium window and waits for the user to complete the challenge. `--cdp-url` instead uses an existing user-controlled Chrome, keeping its authentication and challenge cookies inside that browser.
 
-The fallback keeps authentication and challenge completion in the user’s normal browser. It accepts either a one-conversation Claude JSON export or rendered message HTML; cookies and access tokens are never given to `panagent`.
+Plain HTTP remains the fast default. `--browser auto` falls back when an interactive desktop is available; non-interactive environments fail with an actionable command rather than hanging. Use `--browser never` to forbid browser startup. If browser automation cannot identify the rendered messages, [the manual JSON/HTML export](docs/browser-export.md) remains available. `panagent` never asks for cookies or access tokens.
 
 ## Resuming generated native files
 
@@ -92,6 +102,8 @@ The result is a native session file rather than a command transcript. Native CLI
 - Claude Code: place the JSONL in the matching project directory below `~/.claude/projects/`, then run `claude --resume <session-id>`.
 
 The session ID is `payload.id` in the Codex `session_meta` record and `sessionId` in Claude records. Back up history directories before installing generated files. A destination CLI may migrate its schema on first resume; `panagent` does not modify the history directory itself.
+
+The native smoke suite verifies more than self-parsing: Codex App Server must `thread/read` and `thread/resume` a generated rollout with non-empty turns, and Claude Code must discover a generated session far enough to attempt an API call (using an intentionally invalid key, so the test spends nothing).
 
 ## Tests
 
@@ -107,7 +119,15 @@ Opt-in live tests exercise the documented public samples:
 PANAGENT_LIVE_TESTS=1 PYTHONPATH=src python -m unittest tests.test_live_samples -v
 ```
 
-Live tests accept an explicit Claude challenge error as the expected acquisition outcome; they never count the challenge as parser success.
+Run installed-CLI compatibility checks explicitly:
+
+```bash
+PANAGENT_NATIVE_TESTS=1 PYTHONPATH=src python -m unittest tests.test_native_cli.CodexNativeCompatibilityTests -v
+PANAGENT_CLAUDE_TESTS=1 PANAGENT_CLAUDE_COMMAND=claude \
+  PYTHONPATH=src python -m unittest tests.test_native_cli.ClaudeNativeCompatibilityTests -v
+```
+
+The plain-HTTP Claude live test accepts an explicit challenge only as an acquisition-boundary result. Browser-backed acquisition is tested separately because completing a challenge is a human action and must not be bypassed by CI.
 
 ## Scope
 

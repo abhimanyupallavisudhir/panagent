@@ -3,4 +3,4 @@
 from .model import SCHEMA, new_conversation, validate_conversation
 
 __all__ = ["SCHEMA", "new_conversation", "validate_conversation"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
