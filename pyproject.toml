@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "panagent"
+version = "0.1.0"
+description = "Convert agent conversations and public chat shares through a provider-neutral format"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "panagent contributors" }]
+keywords = ["agents", "claude", "codex", "chatgpt", "conversation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.scripts]
+panagent = "panagent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
