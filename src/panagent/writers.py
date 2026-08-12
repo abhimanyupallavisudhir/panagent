@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from . import __version__
 from .model import validate_conversation
 
 
@@ -191,7 +192,7 @@ def write_claude_code(conv: dict[str, Any], *, mode: str = "transcript", cwd: st
             "userType": "external",
             "cwd": native_cwd,
             "sessionId": session_id,
-            "version": "panagent/0.1.0",
+            "version": f"panagent/{__version__}",
             "gitBranch": conv.get("environment", {}).get("gitBranch", ""),
             "type": record_type,
             "message": native_message,
@@ -258,9 +259,11 @@ def write_codex(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | No
                 "timestamp": created,
                 "cwd": native_cwd,
                 "originator": "panagent",
-                "cli_version": "0.142.5-compatible",
-                "source": "exec",
+                "cli_version": "0.142.5",
+                "source": "cli",
+                "thread_source": "user",
                 "model_provider": "openai",
+                "base_instructions": None,
                 "panagent": {"schema": conv["schema"], "source": conv["source"], "warnings": conv.get("warnings", [])},
             },
         }
@@ -278,16 +281,70 @@ def write_codex(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | No
             }
         ]
         warnings.append(_target_warning("context_mode_flattened", "Native tool/message chronology was flattened into one guarded context message."))
+    active_turn_id: str | None = None
+    turn_started_at = 0
+    last_turn_timestamp = created
+    last_agent_message = ""
+
+    def start_turn(timestamp: str) -> None:
+        nonlocal active_turn_id, turn_started_at, last_turn_timestamp, last_agent_message
+        active_turn_id = str(uuid4())
+        turn_started_at = _epoch_seconds(timestamp)
+        last_turn_timestamp = timestamp
+        last_agent_message = ""
+        records.append(
+            {
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_started",
+                    "turn_id": active_turn_id,
+                    "started_at": turn_started_at,
+                    "model_context_window": None,
+                    "collaboration_mode_kind": "default",
+                },
+            }
+        )
+
+    def close_turn(timestamp: str) -> None:
+        nonlocal active_turn_id
+        if active_turn_id is None:
+            return
+        completed_at = max(turn_started_at, _epoch_seconds(timestamp))
+        records.append(
+            {
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_complete",
+                    "turn_id": active_turn_id,
+                    "last_agent_message": last_agent_message,
+                    "completed_at": completed_at,
+                    "duration_ms": max(0, (completed_at - turn_started_at) * 1000),
+                    "time_to_first_token_ms": None,
+                },
+            }
+        )
+        active_turn_id = None
+
     for item in messages:
         timestamp = _timestamp(item.get("created_at"))
         role = item["role"]
         if role == "system":
             role = "developer"
             warnings.append(_target_warning("codex_system_role_mapped", "System messages were mapped to Codex developer messages."))
+        if role == "user":
+            close_turn(last_turn_timestamp)
+            start_turn(timestamp)
+        elif active_turn_id is None and role not in {"developer"}:
+            start_turn(timestamp)
+        event_text: list[str] = []
         for block in item["content"]:
             kind = block.get("type")
             if kind in {"text", "code", "reasoning", "image", "attachment"}:
                 rendered = _blocks_to_plain_context([block])[0] if _blocks_to_plain_context([block]) else ""
+                if rendered:
+                    event_text.append(rendered)
                 message_role = role
                 if message_role == "tool":
                     warnings.append(_target_warning("codex_unpaired_tool_text", "Unstructured tool-role text was mapped to a user message."))
@@ -300,6 +357,7 @@ def write_codex(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | No
                             "type": "message",
                             "role": message_role,
                             "content": [{"type": "output_text" if message_role == "assistant" else "input_text", "text": rendered}],
+                            **({"id": f"msg_{uuid4().hex}"} if message_role == "assistant" else {}),
                             "internal_chat_message_metadata_passthrough": {"panagent_provenance": item.get("provenance", {})},
                         },
                     }
@@ -338,9 +396,47 @@ def write_codex(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | No
                         },
                     }
                 )
+        visible_text = "\n\n".join(event_text)
+        if active_turn_id is not None and role == "user":
+            records.append(
+                {
+                    "timestamp": timestamp,
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "user_message",
+                        "message": visible_text,
+                        "images": [],
+                        "local_images": [],
+                        "text_elements": [],
+                    },
+                }
+            )
+        elif active_turn_id is not None and role == "assistant" and visible_text:
+            last_agent_message = visible_text
+            records.append(
+                {
+                    "timestamp": timestamp,
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "agent_message",
+                        "message": visible_text,
+                        "phase": "final_answer",
+                        "memory_citation": None,
+                    },
+                }
+            )
+        last_turn_timestamp = timestamp
+    close_turn(last_turn_timestamp)
     target_warnings = _dedupe_warnings(warnings)
     records[0]["payload"]["panagent"]["target_warnings"] = target_warnings
     return Rendered("".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n" for record in records), target_warnings, ".jsonl")
+
+
+def _epoch_seconds(value: str) -> int:
+    try:
+        return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+    except (ValueError, OverflowError, OSError):
+        return int(datetime.now(timezone.utc).timestamp())
 
 
 def _dedupe_warnings(items: list[dict[str, str]]) -> list[dict[str, str]]:

@@ -1,6 +1,33 @@
-# Claude browser/export fallback
+# Claude browser acquisition and export fallback
 
-Claude share URLs sometimes return an anti-bot challenge to command-line HTTP clients. Do not save that challenge page and treat it as a transcript. Use a normal browser to complete the challenge, then export only the rendered conversation.
+Claude share URLs sometimes return an anti-bot challenge to command-line HTTP clients. Do not save that challenge page and treat it as a transcript.
+
+## Automatic browser-assisted acquisition
+
+Install the optional browser support once:
+
+```bash
+python -m pip install 'panagent[browser]'
+playwright install chromium
+```
+
+Then open a headed browser. Panagent waits while you complete any challenge and extracts structured network JSON when available, falling back to rendered message containers:
+
+```bash
+panagent convert 'https://claude.ai/share/…' --to codex --browser headed \
+  --browser-timeout 180 -o imported.jsonl
+```
+
+For an existing Chrome where the share already works, start Chrome with a loopback remote-debugging endpoint and connect to it:
+
+```bash
+panagent convert 'https://claude.ai/share/…' --to codex \
+  --cdp-url http://127.0.0.1:9222 -o imported.jsonl
+```
+
+Only expose Chrome debugging on loopback. A CDP endpoint can control every page in that browser profile. Panagent opens its own tab, does not request cookies/tokens, and does not automate the human-verification checkbox.
+
+The remaining options are useful when browser-assisted extraction cannot recognize a provider DOM change.
 
 ## Option 1: one-conversation JSON export
 

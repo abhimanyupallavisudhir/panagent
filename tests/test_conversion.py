@@ -47,6 +47,10 @@ class NativeRoundTripTests(unittest.TestCase):
         self.assertIn('"type":"session_meta"', codex.text)
         self.assertIn('"type":"function_call"', codex.text)
         payload_types = [json.loads(line).get("payload", {}).get("type") for line in codex.text.splitlines()]
+        self.assertIn("task_started", payload_types)
+        self.assertIn("user_message", payload_types)
+        self.assertIn("agent_message", payload_types)
+        self.assertIn("task_complete", payload_types)
         self.assertLess(payload_types.index("message", 2), payload_types.index("function_call"))
         reparsed = read_codex(codex.text)
         self.assertEqual(block_types(reparsed).count("tool_call"), 1)

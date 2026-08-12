@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from . import __version__
+from .browser import fetch_share_browser
 from .detect import FORMAT_ALIASES, canonical_format, detect_text, url_format
-from .errors import PanagentError
+from .errors import AcquisitionError, PanagentError
 from .model import validate_conversation
 from .readers import READERS, read_file
 from .web import WEB_READERS, fetch_share
@@ -49,6 +50,20 @@ def parser() -> argparse.ArgumentParser:
     )
     convert.add_argument("--cwd", help="working directory recorded in a generated native session")
     convert.add_argument("--timeout", type=float, default=30.0, help="share request timeout in seconds (default: 30)")
+    convert.add_argument(
+        "--browser",
+        choices=["auto", "never", "headless", "headed"],
+        default="auto",
+        help="browser fallback for challenged shares (default: auto; Playwright is optional)",
+    )
+    convert.add_argument(
+        "--browser-timeout",
+        type=float,
+        default=120.0,
+        help="seconds to wait for browser rendering or a user-completed challenge (default: 120)",
+    )
+    convert.add_argument("--cdp-url", help="connect to an existing Chrome debugging endpoint, for example http://127.0.0.1:9222")
+    convert.add_argument("--browser-profile", help="dedicated Chrome/Chromium profile directory used by browser acquisition")
     convert.add_argument("--report", help="write a machine-readable conversion/loss report")
     convert.add_argument("--quiet", action="store_true", help="do not print warnings or summary to stderr")
     convert.add_argument("--fail-on-warning", action="store_true", help="return exit status 3 when any warning is emitted")
@@ -71,8 +86,29 @@ def _load(args: argparse.Namespace, *, allow_url: bool) -> tuple[dict[str, Any],
         source_format = canonical_format(args.source_format) if args.source_format else detected_url
         if source_format not in WEB_READERS:
             raise PanagentError(f"URL does not match source format {source_format}")
-        text = fetch_share(source, timeout=args.timeout)
-        return WEB_READERS[source_format](text, source_uri=source), source_format
+        reader = WEB_READERS[source_format]
+        if args.browser in {"headless", "headed"} or args.cdp_url:
+            text = fetch_share_browser(
+                source,
+                timeout=args.browser_timeout,
+                mode=args.browser,
+                cdp_url=args.cdp_url,
+                profile=args.browser_profile,
+            )
+            return reader(text, source_uri=source), source_format
+        try:
+            text = fetch_share(source, timeout=args.timeout)
+            return reader(text, source_uri=source), source_format
+        except AcquisitionError:
+            if args.browser == "never":
+                raise
+            text = fetch_share_browser(
+                source,
+                timeout=args.browser_timeout,
+                mode=args.browser,
+                profile=args.browser_profile,
+            )
+            return reader(text, source_uri=source), source_format
     if source == "-":
         text = sys.stdin.read()
         source_uri = None
