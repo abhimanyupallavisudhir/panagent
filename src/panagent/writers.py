@@ -132,7 +132,14 @@ def _timestamp(value: Any = None) -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def write_claude_code(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | None = None, **_: Any) -> Rendered:
+def write_claude_code(
+    conv: dict[str, Any],
+    *,
+    mode: str = "transcript",
+    cwd: str | None = None,
+    session_id: str | None = None,
+    **_: Any,
+) -> Rendered:
     validate_conversation(conv)
     warnings: list[dict[str, str]] = []
     if any(item.get("metadata") for item in conv["messages"]):
@@ -142,7 +149,7 @@ def write_claude_code(conv: dict[str, Any], *, mode: str = "transcript", cwd: st
                 "Source model, usage, phase, or status metadata was retained in the IR but is not fully recreated by Claude Code.",
             )
         )
-    session_id = _session_id(conv.get("id"))
+    session_id = _session_id(session_id or conv.get("id"))
     native_cwd = cwd or conv.get("environment", {}).get("cwd") or str(Path.cwd())
     messages = conv["messages"]
     if mode == "context":
@@ -237,7 +244,14 @@ def _to_claude_blocks(blocks: list[dict[str, Any]], role: str) -> tuple[list[dic
     return result, warnings
 
 
-def write_codex(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | None = None, **_: Any) -> Rendered:
+def write_codex(
+    conv: dict[str, Any],
+    *,
+    mode: str = "transcript",
+    cwd: str | None = None,
+    session_id: str | None = None,
+    **_: Any,
+) -> Rendered:
     validate_conversation(conv)
     warnings: list[dict[str, str]] = []
     if any(item.get("metadata") for item in conv["messages"]):
@@ -247,7 +261,7 @@ def write_codex(conv: dict[str, Any], *, mode: str = "transcript", cwd: str | No
                 "Source model, usage, phase, or status metadata was retained in the IR but is not fully recreated by Codex.",
             )
         )
-    session_id = _session_id(conv.get("id"))
+    session_id = _session_id(session_id or conv.get("id"))
     created = _timestamp(conv.get("created_at"))
     native_cwd = cwd or conv.get("environment", {}).get("cwd") or str(Path.cwd())
     records: list[dict[str, Any]] = [

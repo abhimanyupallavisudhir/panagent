@@ -54,6 +54,39 @@ class CLITests(unittest.TestCase):
         self.assertEqual(conv["schema"], "https://panagent.dev/schema/conversation/v1")
         self.assertEqual(conv["source"]["provider"], "anthropic")
 
+    def test_native_output_accepts_an_explicit_destination_session_id(self) -> None:
+        destination = "13a24696-e6c4-4f2e-bf29-4234eac1af21"
+        for target in ("claude-code", "codex"):
+            with self.subTest(target=target):
+                result = run_cli(
+                    "convert",
+                    str(FIXTURES / "claude-code.jsonl"),
+                    "--to",
+                    target,
+                    "--session-id",
+                    destination,
+                    "--quiet",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                records = [json.loads(line) for line in result.stdout.splitlines() if line]
+                if target == "claude-code":
+                    self.assertTrue(records)
+                    self.assertTrue(all(record["sessionId"] == destination for record in records))
+                else:
+                    self.assertEqual(records[0]["type"], "session_meta")
+                    self.assertEqual(records[0]["payload"]["id"], destination)
+
+        invalid = run_cli(
+            "convert",
+            str(FIXTURES / "claude-code.jsonl"),
+            "--to",
+            "codex",
+            "--session-id",
+            "not-a-uuid",
+        )
+        self.assertEqual(invalid.returncode, 2)
+        self.assertIn("session id must be a UUID", invalid.stderr)
+
     def test_warning_policy_exit_status(self) -> None:
         result = run_cli("convert", str(FIXTURES / "claude-share-export.json"), "--to", "ir", "--fail-on-warning", "--quiet")
         self.assertEqual(result.returncode, 3)
