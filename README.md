@@ -60,6 +60,8 @@ panagent convert conversation.agent.json --to markdown -o conversation.md
 
 Use `--from` to override detection, `--report report.json` for a machine-readable capability/loss report, and `--fail-on-warning` for strict automation. `panagent validate FILE` parses a source without writing a conversion.
 
+Pass `--session-id UUID` when an integration needs a fresh, explicit destination session ID instead of preserving a UUID-shaped source ID.
+
 ### Context and transcript modes
 
 Native-to-native conversion defaults to `--mode transcript`, which synthesizes the original turn sequence and maps tool calls/results.

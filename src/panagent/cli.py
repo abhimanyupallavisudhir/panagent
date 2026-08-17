@@ -7,6 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Sequence
+from uuid import UUID
 
 from . import __version__
 from .browser import fetch_share_browser
@@ -16,6 +17,13 @@ from .model import validate_conversation
 from .readers import READERS, read_file
 from .web import WEB_READERS, fetch_share
 from .writers import WRITERS, Rendered
+
+
+def _session_id(value: str) -> str:
+    try:
+        return str(UUID(value))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("session id must be a UUID") from exc
 
 
 def parser() -> argparse.ArgumentParser:
@@ -49,6 +57,11 @@ def parser() -> argparse.ArgumentParser:
         help="native output strategy; auto uses guarded context for web shares and transcript for native sessions",
     )
     convert.add_argument("--cwd", help="working directory recorded in a generated native session")
+    convert.add_argument(
+        "--session-id",
+        type=_session_id,
+        help="destination native session id (default: preserve a UUID source id or generate one)",
+    )
     convert.add_argument("--timeout", type=float, default=30.0, help="share request timeout in seconds (default: 30)")
     convert.add_argument(
         "--browser",
@@ -137,7 +150,7 @@ def _convert(args: argparse.Namespace) -> int:
     mode = args.mode
     if mode == "auto":
         mode = "context" if source_format in WEB_READERS and target_format in {"claude-code", "codex"} else "transcript"
-    rendered = writer(conv, mode=mode, cwd=args.cwd)
+    rendered = writer(conv, mode=mode, cwd=args.cwd, session_id=args.session_id)
     _write_output(args.output, rendered.text)
     warnings = [*conv.get("warnings", []), *rendered.warnings]
     report = _report(conv, source_format, target_format, mode, rendered, warnings)
