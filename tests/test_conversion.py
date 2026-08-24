@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+from panagent.detect import detect_text
 from panagent.errors import AcquisitionError
 from panagent.readers import read_claude_code, read_codex
 from panagent.web import read_chatgpt_share, read_claude_share
@@ -24,11 +25,16 @@ class NativeReaderTests(unittest.TestCase):
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(conv["title"], "Greeting reader")
         self.assertEqual([item["role"] for item in conv["messages"]], ["user", "assistant", "tool", "assistant"])
         self.assertIn("tool_call", block_types(conv))
         self.assertIn("tool_result", block_types(conv))
         self.assertEqual(conv["messages"][1]["content"][1]["id"], "toolu_fixture")
         self.assertIn("claude_file_history_snapshot_not_represented", {item["code"] for item in conv["warnings"]})
+
+    def test_native_detection_scans_metadata_first_jsonl_and_accepts_bom(self) -> None:
+        self.assertEqual(detect_text("\ufeff" + fixture("claude-code.jsonl")), "claude-code")
+        self.assertEqual(detect_text("\ufeff" + fixture("codex.jsonl")), "codex")
 
     def test_codex_reader_uses_response_items_without_event_duplicates(self) -> None:
         conv = read_codex(fixture("codex.jsonl"), source_uri="fixture")
