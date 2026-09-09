@@ -46,6 +46,23 @@ class NativeReaderTests(unittest.TestCase):
         self.assertIn("codex_turn_context_target_specific", {item["code"] for item in conv["warnings"]})
 
 
+class ClaudeToolInputTests(unittest.TestCase):
+    def test_free_form_and_non_object_arguments_remain_resumable(self) -> None:
+        for value in ["print('hello')", "", None, [], [1, "two"], 42, False, {"command": "pwd"}]:
+            with self.subTest(value=value):
+                conv = read_claude_code(fixture("claude-code.jsonl"))
+                call = next(b for m in conv["messages"] for b in m["content"] if b["type"] == "tool_call")
+                call["arguments"] = value
+                rendered = write_claude_code(conv)
+                records = [json.loads(line) for line in rendered.text.splitlines()]
+                native = next(b for r in records if isinstance(r["message"]["content"], list)
+                              for b in r["message"]["content"] if b["type"] == "tool_use")
+                self.assertEqual(native["input"], value if isinstance(value, dict) else {"input": value})
+                self.assertEqual(native["id"], call["id"])
+                codes = {w["code"] for w in rendered.warnings}
+                self.assertEqual("claude_tool_input_wrapped" in codes, not isinstance(value, dict))
+
+
 class NativeRoundTripTests(unittest.TestCase):
     def test_claude_to_codex_and_back_preserves_semantic_blocks(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
