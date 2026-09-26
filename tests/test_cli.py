@@ -26,6 +26,15 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 class CLITests(unittest.TestCase):
+    def test_invalid_utf8_has_clean_cli_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "broken.jsonl"
+            source.write_bytes(b"\xff")
+            result = run_cli("convert", str(source), "--to", "ir")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("panagent: error:", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
     def test_autodetect_claude_to_codex_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "codex.jsonl"

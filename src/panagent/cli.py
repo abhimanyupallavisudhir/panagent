@@ -236,6 +236,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         return int(args.handler(args))
-    except (PanagentError, OSError) as exc:
+    except (PanagentError, OSError, UnicodeError, ValueError, TypeError, KeyError) as exc:
         print(f"panagent: error: {exc}", file=sys.stderr)
         return 2
