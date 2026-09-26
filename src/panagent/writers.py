@@ -17,6 +17,9 @@ class Rendered:
     warnings: list[dict[str, str]]
     suffix: str
 
+    def __post_init__(self) -> None:
+        self.text = self.text.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
 
 def _target_warning(code: str, message: str) -> dict[str, str]:
     return {"code": code, "severity": "warning", "message": message}

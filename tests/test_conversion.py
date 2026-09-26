@@ -64,6 +64,14 @@ class ClaudeToolInputTests(unittest.TestCase):
 
 
 class NativeRoundTripTests(unittest.TestCase):
+    def test_lone_surrogate_is_serialized_in_native_outputs(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"][0]["text"] = "broken \ud800 text"
+        for writer in (write_claude_code, write_codex):
+            with self.subTest(writer=writer.__name__):
+                output = writer(conv).text.encode("utf-8")
+                self.assertIn(b"\\ud800", output.lower())
+
     def test_claude_to_codex_and_back_preserves_semantic_blocks(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
         codex = write_codex(original, mode="transcript", cwd="/tmp/project")
