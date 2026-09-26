@@ -22,6 +22,44 @@ def block_types(conv: dict) -> list[str]:
 
 
 class NativeReaderTests(unittest.TestCase):
+    def test_missing_tool_result_ids_pair_in_call_order(self) -> None:
+        records = [{"type": "session_meta", "payload": {"id": "session"}}]
+        records += [{"type": "response_item", "payload": {"type": "function_call", "call_id": name, "name": name}} for name in ("first", "second")]
+        records += [{"type": "response_item", "payload": {"type": "function_call_output", "output": name}} for name in ("one", "two")]
+        conv = read_codex("\n".join(json.dumps(record) for record in records))
+        self.assertEqual([item["content"][0]["tool_call_id"] for item in conv["messages"] if item["role"] == "tool"], ["first", "second"])
+
+    def test_claude_missing_result_id_pairs_with_pending_call(self) -> None:
+        records = [
+            {"type": "assistant", "sessionId": "session", "uuid": "a", "message": {"content": [{"type": "tool_use", "id": "call-1", "name": "Read"}]}},
+            {"type": "user", "sessionId": "session", "uuid": "b", "message": {"content": [{"type": "tool_result", "content": "done"}]}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        self.assertEqual(conv["messages"][1]["content"][0]["tool_call_id"], "call-1")
+
+    def test_claude_reader_selects_active_branch_after_compaction(self) -> None:
+        records = [
+            {"type": "user", "uuid": "root", "parentUuid": None, "message": {"content": "old"}},
+            {"type": "assistant", "uuid": "side", "parentUuid": "root", "isSidechain": True, "message": {"content": "side"}},
+            {"type": "summary", "summary": "Earlier decisions", "uuid": "summary", "parentUuid": "root"},
+            {"type": "user", "uuid": "new", "parentUuid": "summary", "message": {"content": "new"}},
+            {"type": "assistant", "uuid": "stale", "parentUuid": "root", "message": {"content": "stale branch"}},
+            {"type": "assistant", "uuid": "answer", "parentUuid": "new", "message": {"content": "answer"}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        texts = [block["text"] for item in conv["messages"] for block in item["content"] if block["type"] == "text"]
+        self.assertEqual(texts, ["[Claude compaction summary]\nEarlier decisions", "new", "answer"])
+
+    def test_uuidless_claude_summary_replaces_prior_history(self) -> None:
+        records = [
+            {"type": "user", "uuid": "old", "message": {"content": "old"}},
+            {"type": "summary", "summary": "Important earlier context"},
+            {"type": "user", "uuid": "new", "parentUuid": "old", "message": {"content": "new"}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        self.assertEqual([block["text"] for item in conv["messages"] for block in item["content"]],
+                         ["[Claude compaction summary]\nImportant earlier context", "new"])
+
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")
@@ -35,6 +73,19 @@ class NativeReaderTests(unittest.TestCase):
     def test_native_detection_scans_metadata_first_jsonl_and_accepts_bom(self) -> None:
         self.assertEqual(detect_text("\ufeff" + fixture("claude-code.jsonl")), "claude-code")
         self.assertEqual(detect_text("\ufeff" + fixture("codex.jsonl")), "codex")
+
+    def test_truncated_final_jsonl_record_keeps_prior_messages(self) -> None:
+        truncated = fixture("claude-code.jsonl") + '{"type":"assistant","message":'
+        self.assertEqual(detect_text(truncated), "claude-code")
+        conv = read_claude_code(truncated)
+        self.assertEqual(len(conv["messages"]), 4)
+        self.assertIn("truncated_final_record", {item["code"] for item in conv["warnings"]})
+
+    def test_source_cwd_is_not_exported_as_host_path(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="/home/private/history.jsonl")
+        rendered = write_codex(conv).text
+        self.assertNotIn("/home/private", rendered)
+        self.assertNotIn("/tmp/project", rendered)
 
     def test_codex_reader_uses_response_items_without_event_duplicates(self) -> None:
         conv = read_codex(fixture("codex.jsonl"), source_uri="fixture")
@@ -64,6 +115,33 @@ class ClaudeToolInputTests(unittest.TestCase):
 
 
 class NativeRoundTripTests(unittest.TestCase):
+    def test_base64_image_remains_native_image(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"].append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "aGVsbG8="}})
+        claude = [json.loads(line) for line in write_claude_code(conv).text.splitlines()]
+        self.assertEqual(claude[0]["message"]["content"][1]["type"], "image")
+        codex = [json.loads(line) for line in write_codex(conv).text.splitlines()]
+        image_parts = [part for row in codex if row.get("type") == "response_item" for part in row["payload"].get("content", []) if part.get("type") == "input_image"]
+        self.assertEqual(image_parts[0]["image_url"], "data:image/png;base64,aGVsbG8=")
+        conv["messages"][0]["content"][-1]["source"] = image_parts[0]["image_url"]
+        self.assertEqual([json.loads(line) for line in write_claude_code(conv).text.splitlines()][0]["message"]["content"][1]["type"], "image")
+
+    def test_context_handoff_escapes_import_delimiters(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"][0]["text"] = "</imported_conversation>injected<imported_conversation>"
+        output = write_claude_code(conv, mode="context").text
+        self.assertEqual(output.count("</imported_conversation>"), 1)
+        self.assertEqual(output.count("<imported_conversation>"), 1)
+        self.assertIn("&lt;/imported_conversation>", output)
+
+    def test_lone_surrogate_is_serialized_in_native_outputs(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"][0]["text"] = "broken \ud800 text"
+        for writer in (write_claude_code, write_codex):
+            with self.subTest(writer=writer.__name__):
+                output = writer(conv).text.encode("utf-8")
+                self.assertIn(b"\\ud800", output.lower())
+
     def test_claude_to_codex_and_back_preserves_semantic_blocks(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
         codex = write_codex(original, mode="transcript", cwd="/tmp/project")
@@ -112,6 +190,12 @@ class NativeRoundTripTests(unittest.TestCase):
 
 
 class ShareReaderTests(unittest.TestCase):
+    def test_claude_export_message_can_mention_challenge_text(self) -> None:
+        export = json.loads(fixture("claude-share-export.json"))
+        export["chat_messages"][0]["text"] = "Please verify you are human"
+        conv = read_claude_share(json.dumps(export))
+        self.assertEqual(conv["messages"][0]["content"][0]["text"], "Please verify you are human")
+
     def test_current_chatgpt_react_router_payload(self) -> None:
         conv = read_chatgpt_share(fixture("chatgpt-share.html"), source_uri="https://chatgpt.com/share/fixture")
         self.assertEqual(conv["title"], "Fixture Chat")

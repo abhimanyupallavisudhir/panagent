@@ -11,7 +11,7 @@ Supported paths:
 | ChatGPT public share | ✓ | ✓ | ✓ | ✓ |
 | Claude public share (browser-assisted when challenged) | ✓ | ✓ | ✓ | ✓ |
 
-The native formats are undocumented and change over time. The generated files match the currently tested Claude Code message/tool structure and Codex CLI 0.142.5 rollout structure, but provider-specific state such as sandboxes, approvals, file snapshots, encrypted reasoning, token accounting, and compaction cannot always be recreated.
+The native formats are undocumented and change over time. The generated files match the tested Claude Code message/tool and Codex rollout structures, but provider-specific state such as sandboxes, approvals, file snapshots, encrypted reasoning, token accounting, and compaction cannot always be recreated.
 
 ## Install
 

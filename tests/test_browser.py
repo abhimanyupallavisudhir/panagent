@@ -8,12 +8,19 @@ from unittest.mock import patch
 from panagent.browser import fetch_share_browser
 from panagent.cli import _load
 from panagent.errors import AcquisitionError
+from panagent.web import fetch_share, _ShareRedirectHandler
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class BrowserFallbackTests(unittest.TestCase):
+    def test_share_fetch_rejects_unsupported_scheme_and_redirect(self) -> None:
+        with self.assertRaisesRegex(AcquisitionError, "HTTPS public share"):
+            fetch_share("file:///etc/passwd")
+        with self.assertRaisesRegex(AcquisitionError, "HTTPS public share"):
+            _ShareRedirectHandler().redirect_request(None, None, 302, "Found", {}, "http://127.0.0.1/private")
+
     def test_cdp_rejects_non_loopback_endpoint(self) -> None:
         with self.assertRaisesRegex(AcquisitionError, "restricted to loopback"):
             fetch_share_browser("https://claude.ai/share/fixture", cdp_url="http://browser.example:9222")
@@ -63,6 +70,15 @@ class BrowserFallbackTests(unittest.TestCase):
         self.assertEqual(source_format, "claude-share")
         self.assertEqual(len(conversation["messages"]), 2)
         browser.assert_called_once()
+
+    def test_network_failure_does_not_launch_browser(self) -> None:
+        args = argparse.Namespace(source="https://claude.ai/share/fixture", source_format=None, timeout=1.0,
+                                  browser="auto", browser_timeout=20.0, cdp_url=None, browser_profile=None)
+        with (patch("panagent.cli.fetch_share", side_effect=AcquisitionError("could not fetch share URL: timeout")),
+              patch("panagent.cli.fetch_share_browser") as browser):
+            with self.assertRaisesRegex(AcquisitionError, "timeout"):
+                _load(args, allow_url=True)
+        browser.assert_not_called()
 
     def test_cdp_uses_browser_without_plain_http(self) -> None:
         args = argparse.Namespace(

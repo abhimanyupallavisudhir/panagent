@@ -26,6 +26,23 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 class CLITests(unittest.TestCase):
+    def test_packaging_tracks_runtime_version_and_browser_docs(self) -> None:
+        metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('version = {attr = "panagent.__version__"}', metadata)
+        self.assertTrue((ROOT / "docs" / "browser-export.md").is_file())
+        result = run_cli("convert", str(FIXTURES / "claude-code.jsonl"), "--to", "codex", "--quiet")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('"cli_version":"0.142.5"', result.stdout)
+
+    def test_invalid_utf8_has_clean_cli_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "broken.jsonl"
+            source.write_bytes(b"\xff")
+            result = run_cli("convert", str(source), "--to", "ir")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("panagent: error:", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
     def test_autodetect_claude_to_codex_end_to_end(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "codex.jsonl"
@@ -88,9 +105,13 @@ class CLITests(unittest.TestCase):
         self.assertIn("session id must be a UUID", invalid.stderr)
 
     def test_warning_policy_exit_status(self) -> None:
-        result = run_cli("convert", str(FIXTURES / "claude-share-export.json"), "--to", "ir", "--fail-on-warning", "--quiet")
+        result = run_cli("convert", str(FIXTURES / "claude-code.jsonl"), "--to", "ir", "--fail-on-warning", "--quiet")
         self.assertEqual(result.returncode, 3)
         self.assertTrue(result.stdout.startswith("{"))
+
+    def test_info_only_does_not_fail_on_warning(self) -> None:
+        result = run_cli("convert", str(FIXTURES / "chatgpt-share.html"), "--to", "ir", "--fail-on-warning", "--quiet")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_challenge_has_actionable_failure(self) -> None:
         result = run_cli("convert", str(FIXTURES / "claude-challenge.html"), "--to", "ir")
