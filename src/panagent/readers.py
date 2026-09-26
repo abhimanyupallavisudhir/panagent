@@ -52,7 +52,19 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
     ]
     session_ids: list[str] = []
     pending_tools: list[str] = []
-    for index, record in jsonl_records(text):
+    records = list(jsonl_records(text))
+    graph = {record.get("uuid"): record for _, record in records if isinstance(record.get("uuid"), str)}
+    leaves = [record for _, record in records if record.get("type") in {"user", "assistant", "system"}
+              and isinstance(record.get("uuid"), str) and not record.get("isSidechain")]
+    active: set[str] | None = None
+    if leaves and any(isinstance(record.get("parentUuid"), str) for record in leaves):
+        active = set()
+        cursor = leaves[-1].get("uuid")
+        while isinstance(cursor, str) and cursor in graph and cursor not in active:
+            active.add(cursor)
+            cursor = graph[cursor].get("parentUuid")
+    compacted = False
+    for index, record in records:
         record_type = record.get("type")
         embedded = record.get("panagent") if isinstance(record.get("panagent"), dict) else {}
         if embedded.get("source") and "upstream" not in conv["source"]:
@@ -61,6 +73,16 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
         session_id = record.get("sessionId")
         if isinstance(session_id, str) and session_id not in session_ids:
             session_ids.append(session_id)
+        if record.get("isSidechain") or (active is not None and record_type in {"user", "assistant", "system", "summary"}
+                                          and record.get("uuid") not in active):
+            continue
+        if record_type == "summary" and isinstance(record.get("summary"), str):
+            conv["messages"].clear()
+            pending_tools.clear()
+            compacted = True
+            conv["messages"].append(message(role="user", content=[text_block("[Claude compaction summary]\n" + record["summary"])],
+                                            source_format="claude-code-jsonl", source_id=record.get("uuid"), source_index=index))
+            continue
         if record_type in {"ai-title", "custom-title"}:
             title = record.get("aiTitle") or record.get("customTitle") or record.get("title")
             if isinstance(title, str) and title.strip():
@@ -141,6 +163,8 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
         conv["id"] = session_ids[0]
     if len(session_ids) > 1:
         warning(conv, "multiple_session_ids", "Input contained multiple Claude Code session IDs.")
+    if compacted:
+        warning(conv, "claude_compaction_summary", "Earlier turns were replaced by the active Claude compaction summary.")
     conv["capabilities"]["represented"].extend(["tool_calls", "tool_results", "native_metadata"])
     return validate_conversation(conv)
 

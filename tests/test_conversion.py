@@ -37,6 +37,19 @@ class NativeReaderTests(unittest.TestCase):
         conv = read_claude_code("\n".join(json.dumps(record) for record in records))
         self.assertEqual(conv["messages"][1]["content"][0]["tool_call_id"], "call-1")
 
+    def test_claude_reader_selects_active_branch_after_compaction(self) -> None:
+        records = [
+            {"type": "user", "uuid": "root", "parentUuid": None, "message": {"content": "old"}},
+            {"type": "assistant", "uuid": "side", "parentUuid": "root", "isSidechain": True, "message": {"content": "side"}},
+            {"type": "summary", "summary": "Earlier decisions", "uuid": "summary", "parentUuid": "root"},
+            {"type": "user", "uuid": "new", "parentUuid": "summary", "message": {"content": "new"}},
+            {"type": "assistant", "uuid": "stale", "parentUuid": "root", "message": {"content": "stale branch"}},
+            {"type": "assistant", "uuid": "answer", "parentUuid": "new", "message": {"content": "answer"}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        texts = [block["text"] for item in conv["messages"] for block in item["content"] if block["type"] == "text"]
+        self.assertEqual(texts, ["[Claude compaction summary]\nEarlier decisions", "new", "answer"])
+
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")
