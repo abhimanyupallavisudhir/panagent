@@ -331,7 +331,7 @@ def _chatgpt_content(value: Any, conv: dict[str, Any], index: int) -> list[dict[
 def read_claude_share(text: str, *, source_uri: str | None = None, **_: Any) -> dict[str, Any]:
     stripped = text.lstrip()
     lowered = text.lower()
-    if "challenge-platform" in lowered or "cf-chl-" in lowered or "verify you are human" in lowered:
+    if stripped.startswith("<") and ("challenge-platform" in lowered or "cf-chl-" in lowered):
         raise AcquisitionError(
             "Claude returned an anti-bot challenge, not a conversation. Open the share URL in your browser, "
             "complete the challenge, then use the browser/export fallback documented in docs/browser-export.md."

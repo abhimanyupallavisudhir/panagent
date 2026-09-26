@@ -167,6 +167,12 @@ class NativeRoundTripTests(unittest.TestCase):
 
 
 class ShareReaderTests(unittest.TestCase):
+    def test_claude_export_message_can_mention_challenge_text(self) -> None:
+        export = json.loads(fixture("claude-share-export.json"))
+        export["chat_messages"][0]["text"] = "Please verify you are human"
+        conv = read_claude_share(json.dumps(export))
+        self.assertEqual(conv["messages"][0]["content"][0]["text"], "Please verify you are human")
+
     def test_current_chatgpt_react_router_payload(self) -> None:
         conv = read_chatgpt_share(fixture("chatgpt-share.html"), source_uri="https://chatgpt.com/share/fixture")
         self.assertEqual(conv["title"], "Fixture Chat")

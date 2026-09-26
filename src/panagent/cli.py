@@ -112,8 +112,9 @@ def _load(args: argparse.Namespace, *, allow_url: bool) -> tuple[dict[str, Any],
         try:
             text = fetch_share(source, timeout=args.timeout)
             return reader(text, source_uri=source), source_format
-        except AcquisitionError:
-            if args.browser == "never":
+        except AcquisitionError as exc:
+            retryable = "anti-bot challenge" in str(exc) or "HTTP 403" in str(exc) or "HTTP 429" in str(exc)
+            if args.browser == "never" or not retryable:
                 raise
             text = fetch_share_browser(
                 source,

@@ -71,6 +71,15 @@ class BrowserFallbackTests(unittest.TestCase):
         self.assertEqual(len(conversation["messages"]), 2)
         browser.assert_called_once()
 
+    def test_network_failure_does_not_launch_browser(self) -> None:
+        args = argparse.Namespace(source="https://claude.ai/share/fixture", source_format=None, timeout=1.0,
+                                  browser="auto", browser_timeout=20.0, cdp_url=None, browser_profile=None)
+        with (patch("panagent.cli.fetch_share", side_effect=AcquisitionError("could not fetch share URL: timeout")),
+              patch("panagent.cli.fetch_share_browser") as browser):
+            with self.assertRaisesRegex(AcquisitionError, "timeout"):
+                _load(args, allow_url=True)
+        browser.assert_not_called()
+
     def test_cdp_uses_browser_without_plain_http(self) -> None:
         args = argparse.Namespace(
             source="https://claude.ai/share/fixture",
