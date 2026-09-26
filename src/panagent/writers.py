@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,7 +96,8 @@ def _context_handoff(conv: dict[str, Any]) -> str:
     header.extend(["", "<imported_conversation>"])
     for item in conv["messages"]:
         header.append(f"\n[{item['role'].upper()}]")
-        header.extend(_blocks_to_plain_context(item["content"]))
+        header.extend(re.sub(r"<(/?imported_conversation)>", r"&lt;\1>", part, flags=re.IGNORECASE)
+                      for part in _blocks_to_plain_context(item["content"]))
     header.extend(["", "</imported_conversation>", "", "Continue from this context when the user provides a new request."])
     return "\n".join(header)
 
