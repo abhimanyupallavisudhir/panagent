@@ -105,7 +105,7 @@ class CLITests(unittest.TestCase):
         self.assertIn("session id must be a UUID", invalid.stderr)
 
     def test_warning_policy_exit_status(self) -> None:
-        result = run_cli("convert", str(FIXTURES / "claude-share-export.json"), "--to", "ir", "--fail-on-warning", "--quiet")
+        result = run_cli("convert", str(FIXTURES / "claude-code.jsonl"), "--to", "ir", "--fail-on-warning", "--quiet")
         self.assertEqual(result.returncode, 3)
         self.assertTrue(result.stdout.startswith("{"))
 
