@@ -79,7 +79,7 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
         if isinstance(session_id, str) and session_id not in session_ids:
             session_ids.append(session_id)
         if record.get("isSidechain") or (active is not None and record_type in {"user", "assistant", "system", "summary"}
-                                          and record.get("uuid") not in active):
+                                          and isinstance(record.get("uuid"), str) and record["uuid"] not in active):
             continue
         if record_type == "summary" and isinstance(record.get("summary"), str):
             conv["messages"].clear()

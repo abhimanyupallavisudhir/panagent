@@ -50,6 +50,16 @@ class NativeReaderTests(unittest.TestCase):
         texts = [block["text"] for item in conv["messages"] for block in item["content"] if block["type"] == "text"]
         self.assertEqual(texts, ["[Claude compaction summary]\nEarlier decisions", "new", "answer"])
 
+    def test_uuidless_claude_summary_replaces_prior_history(self) -> None:
+        records = [
+            {"type": "user", "uuid": "old", "message": {"content": "old"}},
+            {"type": "summary", "summary": "Important earlier context"},
+            {"type": "user", "uuid": "new", "parentUuid": "old", "message": {"content": "new"}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        self.assertEqual([block["text"] for item in conv["messages"] for block in item["content"]],
+                         ["[Claude compaction summary]\nImportant earlier context", "new"])
+
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")
