@@ -26,6 +26,14 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 class CLITests(unittest.TestCase):
+    def test_packaging_tracks_runtime_version_and_browser_docs(self) -> None:
+        metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('version = {attr = "panagent.__version__"}', metadata)
+        self.assertTrue((ROOT / "docs" / "browser-export.md").is_file())
+        result = run_cli("convert", str(FIXTURES / "claude-code.jsonl"), "--to", "codex", "--quiet")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('"cli_version":"0.142.5"', result.stdout)
+
     def test_invalid_utf8_has_clean_cli_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "broken.jsonl"

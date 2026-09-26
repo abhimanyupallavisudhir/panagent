@@ -299,7 +299,6 @@ def write_codex(
                 "timestamp": created,
                 "cwd": native_cwd,
                 "originator": "panagent",
-                "cli_version": "0.142.5",
                 "source": "cli",
                 "thread_source": "user",
                 "model_provider": "openai",

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "panagent"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Convert agent conversations and public chat shares through a provider-neutral format"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,3 +27,6 @@ panagent = "panagent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "panagent.__version__"}

@@ -9,10 +9,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from .detect import url_format
+from . import __version__
 from .errors import AcquisitionError, FormatError
 from .model import message, new_conversation, normalize_timestamp, text_block, validate_conversation, warning
 
-USER_AGENT = "panagent/0.1 (+https://github.com/abhimanyupallavisudhir/panagent)"
+USER_AGENT = f"panagent/{__version__} (+https://github.com/abhimanyupallavisudhir/panagent)"
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 
 
