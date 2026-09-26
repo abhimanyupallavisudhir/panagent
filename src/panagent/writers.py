@@ -160,7 +160,7 @@ def write_claude_code(
             )
         )
     session_id = _session_id(session_id or conv.get("id"))
-    native_cwd = cwd or conv.get("environment", {}).get("cwd") or str(Path.cwd())
+    native_cwd = cwd or "."
     messages = conv["messages"]
     if mode == "context":
         messages = [
@@ -289,7 +289,7 @@ def write_codex(
         )
     session_id = _session_id(session_id or conv.get("id"))
     created = _timestamp(conv.get("created_at"))
-    native_cwd = cwd or conv.get("environment", {}).get("cwd") or str(Path.cwd())
+    native_cwd = cwd or "."
     records: list[dict[str, Any]] = [
         {
             "timestamp": created,

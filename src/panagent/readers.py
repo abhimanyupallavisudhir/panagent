@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .errors import FormatError
 from .model import (
@@ -22,13 +22,18 @@ def read_ir(text: str, **_: Any) -> dict[str, Any]:
         raise FormatError(f"invalid panagent JSON: {exc}") from exc
 
 
-def jsonl_records(text: str) -> Iterable[tuple[int, dict[str, Any]]]:
-    for index, line in enumerate(text.splitlines()):
+def jsonl_records(text: str, on_truncated: Callable[[int], None] | None = None) -> Iterable[tuple[int, dict[str, Any]]]:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
         if not line.strip():
             continue
         try:
             value = json.loads(line.lstrip("\ufeff"))
         except json.JSONDecodeError as exc:
+            if index == len(lines) - 1 and not text.endswith(("\n", "\r")):
+                if on_truncated:
+                    on_truncated(index)
+                break
             raise FormatError(f"invalid JSONL at line {index + 1}: {exc.msg}") from exc
         if not isinstance(value, dict):
             raise FormatError(f"JSONL line {index + 1} is not an object")
@@ -52,7 +57,7 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
     ]
     session_ids: list[str] = []
     pending_tools: list[str] = []
-    records = list(jsonl_records(text))
+    records = list(jsonl_records(text, lambda index: warning(conv, "truncated_final_record", "Incomplete final JSONL record was skipped.", path=f"records[{index}]")))
     graph = {record.get("uuid"): record for _, record in records if isinstance(record.get("uuid"), str)}
     leaves = [record for _, record in records if record.get("type") in {"user", "assistant", "system"}
               and isinstance(record.get("uuid"), str) and not record.get("isSidechain")]
@@ -138,7 +143,7 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
             for key in ("model", "stop_reason", "stop_sequence", "usage")
             if native.get(key) is not None
         }
-        for key in ("cwd", "version", "gitBranch", "userType", "isSidechain", "parentUuid"):
+        for key in ("version", "gitBranch", "userType", "isSidechain", "parentUuid"):
             if record.get(key) is not None:
                 metadata[f"claude_{key}"] = record[key]
         converted = message(
@@ -156,8 +161,6 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
         if not conv["created_at"]:
             conv["created_at"] = normalize_timestamp(record.get("timestamp"))
         conv["updated_at"] = normalize_timestamp(record.get("timestamp")) or conv["updated_at"]
-        if record.get("cwd") and not conv["environment"].get("cwd"):
-            conv["environment"]["cwd"] = record["cwd"]
     if session_ids:
         conv["source"]["conversation_id"] = session_ids[0]
         conv["id"] = session_ids[0]
@@ -236,7 +239,7 @@ def read_codex(text: str, *, source_uri: str | None = None, **_: Any) -> dict[st
         "native_metadata",
     ]
     pending_tools: list[str] = []
-    for index, record in jsonl_records(text):
+    for index, record in jsonl_records(text, lambda index: warning(conv, "truncated_final_record", "Incomplete final JSONL record was skipped.", path=f"records[{index}]")):
         timestamp = record.get("timestamp")
         record_type = record.get("type")
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
@@ -246,7 +249,7 @@ def read_codex(text: str, *, source_uri: str | None = None, **_: Any) -> dict[st
                 conv["id"] = str(session_id)
                 conv["source"]["conversation_id"] = str(session_id)
             conv["created_at"] = normalize_timestamp(payload.get("timestamp") or timestamp)
-            for key in ("cwd", "cli_version", "model_provider", "originator", "source"):
+            for key in ("cli_version", "model_provider", "originator", "source"):
                 if payload.get(key) is not None:
                     conv["environment"][key] = payload[key]
             embedded = payload.get("panagent") if isinstance(payload.get("panagent"), dict) else {}
@@ -255,7 +258,7 @@ def read_codex(text: str, *, source_uri: str | None = None, **_: Any) -> dict[st
             _merge_embedded_warnings(conv, embedded)
             continue
         if record_type == "turn_context":
-            for key in ("cwd", "model", "effort", "approval_policy", "sandbox_policy", "workspace_roots"):
+            for key in ("model", "effort", "approval_policy", "sandbox_policy"):
                 if payload.get(key) is not None:
                     conv["environment"][key] = payload[key]
             warning(

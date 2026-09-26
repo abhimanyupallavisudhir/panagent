@@ -101,6 +101,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertTrue(result.stdout.startswith("{"))
 
+    def test_info_only_does_not_fail_on_warning(self) -> None:
+        result = run_cli("convert", str(FIXTURES / "chatgpt-share.html"), "--to", "ir", "--fail-on-warning", "--quiet")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_challenge_has_actionable_failure(self) -> None:
         result = run_cli("convert", str(FIXTURES / "claude-challenge.html"), "--to", "ir")
         self.assertEqual(result.returncode, 2)

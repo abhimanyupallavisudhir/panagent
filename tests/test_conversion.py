@@ -64,6 +64,19 @@ class NativeReaderTests(unittest.TestCase):
         self.assertEqual(detect_text("\ufeff" + fixture("claude-code.jsonl")), "claude-code")
         self.assertEqual(detect_text("\ufeff" + fixture("codex.jsonl")), "codex")
 
+    def test_truncated_final_jsonl_record_keeps_prior_messages(self) -> None:
+        truncated = fixture("claude-code.jsonl") + '{"type":"assistant","message":'
+        self.assertEqual(detect_text(truncated), "claude-code")
+        conv = read_claude_code(truncated)
+        self.assertEqual(len(conv["messages"]), 4)
+        self.assertIn("truncated_final_record", {item["code"] for item in conv["warnings"]})
+
+    def test_source_cwd_is_not_exported_as_host_path(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="/home/private/history.jsonl")
+        rendered = write_codex(conv).text
+        self.assertNotIn("/home/private", rendered)
+        self.assertNotIn("/tmp/project", rendered)
+
     def test_codex_reader_uses_response_items_without_event_duplicates(self) -> None:
         conv = read_codex(fixture("codex.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "22222222-2222-4222-8222-222222222222")

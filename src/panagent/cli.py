@@ -159,7 +159,7 @@ def _convert(args: argparse.Namespace) -> int:
         _write_output(args.report, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     if not args.quiet:
         _print_report(report, args.output)
-    return 3 if args.fail_on_warning and warnings else 0
+    return 3 if args.fail_on_warning and any(item.get("severity", "warning") != "info" for item in warnings) else 0
 
 
 def _validate(args: argparse.Namespace) -> int:
