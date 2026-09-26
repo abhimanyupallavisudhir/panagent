@@ -71,7 +71,8 @@ def _blocks_to_markdown(blocks: list[dict[str, Any]]) -> list[str]:
             lines.extend([f"**Tool result (`{block.get('tool_call_id', 'unknown')}`)**", "", "```text", str(block.get("content", "")), "```", ""])
         elif kind == "image":
             source = block.get("source") or "unavailable"
-            lines.extend([f"![{block.get('alt') or 'Imported image'}]({source})", ""])
+            lines.extend(["[Image: embedded data]" if isinstance(source, dict) or str(source).startswith("data:")
+                          else f"![{block.get('alt') or 'Imported image'}]({source})", ""])
         elif kind == "attachment":
             lines.extend([f"[Attachment: {block.get('name') or block.get('uri') or 'unavailable'}]", ""])
     while lines and not lines[-1]:
@@ -119,6 +120,10 @@ def _blocks_to_plain_context(blocks: list[dict[str, Any]]) -> list[str]:
             result.append(f"[Tool call: {block.get('name', 'unknown')} id={block.get('id', 'unknown')}]\n{args}")
         elif kind == "tool_result":
             result.append(f"[Tool result: id={block.get('tool_call_id', 'unknown')}]\n{block.get('content', '')}")
+        elif kind == "image" and isinstance(block.get("source"), dict) and block["source"].get("type") == "base64":
+            result.append("[Image: embedded data]")
+        elif kind == "image" and isinstance(block.get("source"), str) and block["source"].startswith("data:"):
+            result.append("[Image: embedded data]")
         elif kind in {"image", "attachment"}:
             result.append(f"[{kind.title()}: {block.get('source') or block.get('uri') or block.get('name') or 'unavailable'}]")
     return result
@@ -248,6 +253,15 @@ def _to_claude_blocks(blocks: list[dict[str, Any]], role: str) -> tuple[list[dic
             result.append({"type": "tool_use", "id": str(block.get("id") or f"tool_{uuid4().hex}"), "name": str(block.get("name") or "unknown"), "input": arguments})
         elif kind == "tool_result":
             result.append({"type": "tool_result", "tool_use_id": str(block.get("tool_call_id") or "unknown"), "content": str(block.get("content", "")), "is_error": bool(block.get("is_error", False))})
+        elif kind == "image" and isinstance(block.get("source"), dict) and block["source"].get("type") == "base64":
+            result.append({"type": "image", "source": block["source"]})
+        elif kind == "image" and isinstance(block.get("source"), str):
+            match = re.fullmatch(r"data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)", block["source"])
+            if match:
+                result.append({"type": "image", "source": {"type": "base64", "media_type": match[1], "data": match[2]}})
+            else:
+                result.append({"type": "text", "text": "[Image unavailable: unsupported source]"})
+                warnings.append(_target_warning("claude_binary_reference_flattened", "Image or attachment references were converted to labelled text."))
         elif kind in {"image", "attachment"}:
             result.append({"type": "text", "text": f"[{kind.title()} unavailable: {block.get('source') or block.get('uri') or block.get('name') or 'no reference'}]"})
             warnings.append(_target_warning("claude_binary_reference_flattened", "Image or attachment references were converted to labelled text."))
@@ -367,6 +381,19 @@ def write_codex(
         event_text: list[str] = []
         for block in item["content"]:
             kind = block.get("type")
+            if kind == "image" and role == "user":
+                source = block.get("source")
+                image_url = (f"data:{source['media_type']};base64,{source['data']}"
+                             if isinstance(source, dict) and source.get("type") == "base64"
+                             and isinstance(source.get("media_type"), str) and isinstance(source.get("data"), str)
+                             else source if isinstance(source, str) and source.startswith("data:image/") else None)
+                if image_url:
+                    records.append({"timestamp": timestamp, "type": "response_item", "payload": {
+                        "type": "message", "role": "user", "content": [{"type": "input_image", "image_url": image_url}],
+                        "internal_chat_message_metadata_passthrough": {"panagent_provenance": item.get("provenance", {})},
+                    }})
+                    event_text.append("[Imported image]")
+                    continue
             if kind in {"text", "code", "reasoning", "image", "attachment"}:
                 rendered = _blocks_to_plain_context([block])[0] if _blocks_to_plain_context([block]) else ""
                 if rendered:
