@@ -22,6 +22,21 @@ def block_types(conv: dict) -> list[str]:
 
 
 class NativeReaderTests(unittest.TestCase):
+    def test_missing_tool_result_ids_pair_in_call_order(self) -> None:
+        records = [{"type": "session_meta", "payload": {"id": "session"}}]
+        records += [{"type": "response_item", "payload": {"type": "function_call", "call_id": name, "name": name}} for name in ("first", "second")]
+        records += [{"type": "response_item", "payload": {"type": "function_call_output", "output": name}} for name in ("one", "two")]
+        conv = read_codex("\n".join(json.dumps(record) for record in records))
+        self.assertEqual([item["content"][0]["tool_call_id"] for item in conv["messages"] if item["role"] == "tool"], ["first", "second"])
+
+    def test_claude_missing_result_id_pairs_with_pending_call(self) -> None:
+        records = [
+            {"type": "assistant", "sessionId": "session", "uuid": "a", "message": {"content": [{"type": "tool_use", "id": "call-1", "name": "Read"}]}},
+            {"type": "user", "sessionId": "session", "uuid": "b", "message": {"content": [{"type": "tool_result", "content": "done"}]}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        self.assertEqual(conv["messages"][1]["content"][0]["tool_call_id"], "call-1")
+
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")

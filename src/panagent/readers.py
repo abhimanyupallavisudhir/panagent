@@ -51,6 +51,7 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
         "native_metadata",
     ]
     session_ids: list[str] = []
+    pending_tools: list[str] = []
     for index, record in jsonl_records(text):
         record_type = record.get("type")
         embedded = record.get("panagent") if isinstance(record.get("panagent"), dict) else {}
@@ -97,6 +98,17 @@ def read_claude_code(text: str, *, source_uri: str | None = None, **_: Any) -> d
         blocks = _read_claude_content(native.get("content"), conv, index)
         if not blocks:
             continue
+        for block in blocks:
+            if block["type"] == "tool_call":
+                pending_tools.append(block["id"])
+            elif block["type"] == "tool_result":
+                call_id = block["tool_call_id"]
+                if call_id == "unknown" and pending_tools:
+                    call_id = block["tool_call_id"] = pending_tools[0]
+                if call_id in pending_tools:
+                    pending_tools.remove(call_id)
+                else:
+                    warning(conv, "claude_unpaired_tool_result", "A Claude tool result had no matching call.", path=f"records[{index}]")
         if all(block.get("type") == "tool_result" for block in blocks):
             role = "tool"
         metadata = {
@@ -199,7 +211,7 @@ def read_codex(text: str, *, source_uri: str | None = None, **_: Any) -> dict[st
         "turn_context",
         "native_metadata",
     ]
-    pending_tools: list[dict[str, Any]] = []
+    pending_tools: list[str] = []
     for index, record in jsonl_records(text):
         timestamp = record.get("timestamp")
         record_type = record.get("type")
@@ -266,7 +278,7 @@ def read_codex(text: str, *, source_uri: str | None = None, **_: Any) -> dict[st
                 "name": str(payload.get("name") or payload_type.removesuffix("_call")),
                 "arguments": arguments,
             }
-            pending_tools.append(block)
+            pending_tools.append(block["id"])
             converted = message(
                 role="assistant",
                 content=[block],
@@ -282,7 +294,11 @@ def read_codex(text: str, *, source_uri: str | None = None, **_: Any) -> dict[st
             output = payload.get("output", "")
             if not isinstance(output, str):
                 output = json.dumps(output, ensure_ascii=False)
-            call_id = str(payload.get("call_id") or (pending_tools[-1]["id"] if pending_tools else "unknown"))
+            call_id = str(payload.get("call_id") or (pending_tools[0] if pending_tools else "unknown"))
+            if call_id in pending_tools:
+                pending_tools.remove(call_id)
+            else:
+                warning(conv, "codex_unpaired_tool_result", "A Codex tool result had no matching call.", path=f"records[{index}]")
             converted = message(
                 role="tool",
                 content=[{"type": "tool_result", "tool_call_id": call_id, "content": output, "is_error": False}],
