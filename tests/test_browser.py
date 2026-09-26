@@ -8,12 +8,19 @@ from unittest.mock import patch
 from panagent.browser import fetch_share_browser
 from panagent.cli import _load
 from panagent.errors import AcquisitionError
+from panagent.web import fetch_share, _ShareRedirectHandler
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class BrowserFallbackTests(unittest.TestCase):
+    def test_share_fetch_rejects_unsupported_scheme_and_redirect(self) -> None:
+        with self.assertRaisesRegex(AcquisitionError, "HTTPS public share"):
+            fetch_share("file:///etc/passwd")
+        with self.assertRaisesRegex(AcquisitionError, "HTTPS public share"):
+            _ShareRedirectHandler().redirect_request(None, None, 302, "Found", {}, "http://127.0.0.1/private")
+
     def test_cdp_rejects_non_loopback_endpoint(self) -> None:
         with self.assertRaisesRegex(AcquisitionError, "restricted to loopback"):
             fetch_share_browser("https://claude.ai/share/fixture", cdp_url="http://browser.example:9222")
