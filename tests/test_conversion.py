@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+from panagent import __version__
 from panagent.detect import detect_text
 from panagent.errors import AcquisitionError
 from panagent.readers import read_claude_code, read_codex
@@ -37,28 +38,25 @@ class NativeReaderTests(unittest.TestCase):
         conv = read_claude_code("\n".join(json.dumps(record) for record in records))
         self.assertEqual(conv["messages"][1]["content"][0]["tool_call_id"], "call-1")
 
-    def test_claude_reader_selects_active_branch_after_compaction(self) -> None:
-        records = [
-            {"type": "user", "uuid": "root", "parentUuid": None, "message": {"content": "old"}},
-            {"type": "assistant", "uuid": "side", "parentUuid": "root", "isSidechain": True, "message": {"content": "side"}},
-            {"type": "summary", "summary": "Earlier decisions", "uuid": "summary", "parentUuid": "root"},
-            {"type": "user", "uuid": "new", "parentUuid": "summary", "message": {"content": "new"}},
-            {"type": "assistant", "uuid": "stale", "parentUuid": "root", "message": {"content": "stale branch"}},
-            {"type": "assistant", "uuid": "answer", "parentUuid": "new", "message": {"content": "answer"}},
-        ]
-        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
-        texts = [block["text"] for item in conv["messages"] for block in item["content"] if block["type"] == "text"]
-        self.assertEqual(texts, ["[Claude compaction summary]\nEarlier decisions", "new", "answer"])
+    def test_claude_compaction_boundary_selects_active_branch(self) -> None:
+        conv = read_claude_code(fixture("claude-code-compacted.jsonl"))
+        texts = [block["text"] for item in conv["messages"] for block in item["content"]]
+        self.assertTrue(texts[0].startswith("This session is being continued from a previous conversation"))
+        self.assertEqual(texts[1:], ["Start phase one.", "Phase one is done."])
+        self.assertTrue(conv["messages"][0]["metadata"]["claude_isCompactSummary"])
+        self.assertEqual(conv["title"], "Database migration plan")
+        codes = {item["code"] for item in conv["warnings"]}
+        self.assertIn("claude_compaction_summary", codes)
+        self.assertNotIn("claude_unknown_record", codes)
 
-    def test_uuidless_claude_summary_replaces_prior_history(self) -> None:
-        records = [
-            {"type": "user", "uuid": "old", "message": {"content": "old"}},
-            {"type": "summary", "summary": "Important earlier context"},
-            {"type": "user", "uuid": "new", "parentUuid": "old", "message": {"content": "new"}},
-        ]
-        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+    def test_claude_title_summary_keeps_history(self) -> None:
+        conv = read_claude_code(fixture("claude-code-titled.jsonl"))
         self.assertEqual([block["text"] for item in conv["messages"] for block in item["content"]],
-                         ["[Claude compaction summary]\nImportant earlier context", "new"])
+                         ["Where is the greeting?", "It is in greeting.txt.", "What does it say?", "It says hello."])
+        self.assertEqual(conv["title"], "Greeting file lookup")
+        self.assertEqual(conv["warnings"], [])
+        explicit = fixture("claude-code-titled.jsonl") + json.dumps({"type": "custom-title", "customTitle": "Renamed"}) + "\n"
+        self.assertEqual(read_claude_code(explicit)["title"], "Renamed")
 
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
@@ -179,6 +177,15 @@ class NativeRoundTripTests(unittest.TestCase):
         codex_first = json.loads(write_codex(conv).text.splitlines()[0])
         self.assertEqual(claude_first["panagent"]["source"]["format"], "codex-jsonl")
         self.assertEqual(codex_first["payload"]["panagent"]["source"]["format"], "codex-jsonl")
+
+    def test_codex_session_meta_has_fields_codex_requires(self) -> None:
+        # Codex 0.156.1 rejects a rollout on thread/read unless all of these are strings.
+        first = json.loads(write_codex(read_claude_code(fixture("claude-code.jsonl"))).text.splitlines()[0])
+        self.assertEqual(first["type"], "session_meta")
+        self.assertIsInstance(first["timestamp"], str)
+        for key in ("id", "timestamp", "cwd", "originator", "cli_version"):
+            self.assertIsInstance(first["payload"].get(key), str, key)
+        self.assertEqual((first["payload"]["originator"], first["payload"]["cli_version"]), ("panagent", __version__))
 
     def test_generated_session_reimport_retains_upstream_lineage(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
