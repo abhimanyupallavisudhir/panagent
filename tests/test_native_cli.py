@@ -18,6 +18,9 @@ from panagent.writers import write_claude_code, write_codex
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
+# karmax pins the Codex release that reads imported rollouts; a sibling checkout
+# with installed dependencies has it offline.
+PINNED_CODEX = Path(__file__).resolve().parents[2] / "karmax" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
 
 
 @unittest.skipUnless(os.environ.get("PANAGENT_NATIVE_TESTS") == "1", "set PANAGENT_NATIVE_TESTS=1 for installed-CLI checks")
@@ -26,33 +29,19 @@ class CodexNativeCompatibilityTests(unittest.TestCase):
         executable = shutil.which("codex")
         if not executable:
             self.skipTest("codex is not installed")
-        conversation = read_claude_code((FIXTURES / "claude-code.jsonl").read_text(encoding="utf-8"))
-        rendered = write_codex(conversation, mode="transcript", cwd="/tmp/panagent-native-test")
-        with tempfile.TemporaryDirectory() as directory:
-            codex_home = Path(directory)
-            sessions = codex_home / "sessions" / "2026" / "08" / "11"
-            sessions.mkdir(parents=True)
-            rollout = sessions / f"rollout-2026-08-11T00-00-00-{SESSION_ID}.jsonl"
-            rollout.write_text(rendered.text, encoding="utf-8")
-            client = _AppServer(executable, codex_home)
-            try:
-                client.request(
-                    1,
-                    "initialize",
-                    {"clientInfo": {"name": "panagent-test", "title": "panagent test", "version": "0.1.0"}},
-                )
-                client.notify("initialized", {})
-                read = client.request(2, "thread/read", {"threadId": SESSION_ID, "includeTurns": True})
-                thread = read["result"]["thread"]
-                self.assertEqual(thread["id"], SESSION_ID)
-                self.assertGreaterEqual(len(thread["turns"]), 1)
-                item_types = [item["type"] for turn in thread["turns"] for item in turn["items"]]
-                self.assertIn("userMessage", item_types)
-                self.assertIn("agentMessage", item_types)
-                resumed = client.request(3, "thread/resume", {"threadId": SESSION_ID})
-                self.assertEqual(resumed["result"]["thread"]["id"], SESSION_ID)
-            finally:
-                client.close()
+        _assert_codex_reads_and_resumes(self, [executable])
+
+
+class PinnedCodexCompatibilityTests(unittest.TestCase):
+    def test_pinned_codex_reads_and_resumes_generated_rollout(self) -> None:
+        configured = os.environ.get("PANAGENT_PINNED_CODEX")
+        if configured:
+            command = shlex.split(configured)
+        elif PINNED_CODEX.is_file() and shutil.which("node"):
+            command = ["node", str(PINNED_CODEX)]
+        else:
+            self.skipTest(f"pinned Codex is not installed at {PINNED_CODEX}")
+        _assert_codex_reads_and_resumes(self, command)
 
 
 @unittest.skipUnless(os.environ.get("PANAGENT_CLAUDE_TESTS") == "1", "set PANAGENT_CLAUDE_TESTS=1 for Claude CLI discovery")
@@ -102,12 +91,42 @@ class ClaudeNativeCompatibilityTests(unittest.TestCase):
             self.assertIn("Invalid API key", combined)
 
 
+def _assert_codex_reads_and_resumes(test: unittest.TestCase, command: list[str]) -> None:
+    conversation = read_claude_code((FIXTURES / "claude-code.jsonl").read_text(encoding="utf-8"))
+    rendered = write_codex(conversation, mode="transcript", cwd="/tmp/panagent-native-test")
+    with tempfile.TemporaryDirectory() as directory:
+        codex_home = Path(directory)
+        sessions = codex_home / "sessions" / "2026" / "08" / "11"
+        sessions.mkdir(parents=True)
+        rollout = sessions / f"rollout-2026-08-11T00-00-00-{SESSION_ID}.jsonl"
+        rollout.write_text(rendered.text, encoding="utf-8")
+        client = _AppServer(command, codex_home)
+        try:
+            client.request(
+                1,
+                "initialize",
+                {"clientInfo": {"name": "panagent-test", "title": "panagent test", "version": "0.1.0"}},
+            )
+            client.notify("initialized", {})
+            read = client.request(2, "thread/read", {"threadId": SESSION_ID, "includeTurns": True})
+            thread = read["result"]["thread"]
+            test.assertEqual(thread["id"], SESSION_ID)
+            test.assertGreaterEqual(len(thread["turns"]), 1)
+            item_types = [item["type"] for turn in thread["turns"] for item in turn["items"]]
+            test.assertIn("userMessage", item_types)
+            test.assertIn("agentMessage", item_types)
+            resumed = client.request(3, "thread/resume", {"threadId": SESSION_ID})
+            test.assertEqual(resumed["result"]["thread"]["id"], SESSION_ID)
+        finally:
+            client.close()
+
+
 class _AppServer:
-    def __init__(self, executable: str, codex_home: Path) -> None:
+    def __init__(self, command: list[str], codex_home: Path) -> None:
         environment = os.environ.copy()
         environment["CODEX_HOME"] = str(codex_home)
         self.process = subprocess.Popen(
-            [executable, "app-server", "--stdio"],
+            [*command, "app-server", "--stdio"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

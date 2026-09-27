@@ -129,6 +129,8 @@ PANAGENT_CLAUDE_TESTS=1 PANAGENT_CLAUDE_COMMAND=claude \
   PYTHONPATH=src python -m unittest tests.test_native_cli.ClaudeNativeCompatibilityTests -v
 ```
 
+The default suite also has the Codex release pinned by a sibling `../karmax` checkout (`node_modules/@openai/codex`) read and resume a generated rollout. It skips when that checkout has no installed dependencies. Set `PANAGENT_PINNED_CODEX` to point it at another binary.
+
 The plain-HTTP Claude live test accepts an explicit challenge only as an acquisition-boundary result. Browser-backed acquisition is tested separately because completing a challenge is a human action and must not be bypassed by CI.
 
 ## Scope

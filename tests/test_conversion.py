@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+from panagent import __version__
 from panagent.detect import detect_text
 from panagent.errors import AcquisitionError
 from panagent.readers import read_claude_code, read_codex
@@ -176,6 +177,15 @@ class NativeRoundTripTests(unittest.TestCase):
         codex_first = json.loads(write_codex(conv).text.splitlines()[0])
         self.assertEqual(claude_first["panagent"]["source"]["format"], "codex-jsonl")
         self.assertEqual(codex_first["payload"]["panagent"]["source"]["format"], "codex-jsonl")
+
+    def test_codex_session_meta_has_fields_codex_requires(self) -> None:
+        # Codex 0.156.1 rejects a rollout on thread/read unless all of these are strings.
+        first = json.loads(write_codex(read_claude_code(fixture("claude-code.jsonl"))).text.splitlines()[0])
+        self.assertEqual(first["type"], "session_meta")
+        self.assertIsInstance(first["timestamp"], str)
+        for key in ("id", "timestamp", "cwd", "originator", "cli_version"):
+            self.assertIsInstance(first["payload"].get(key), str, key)
+        self.assertEqual((first["payload"]["originator"], first["payload"]["cli_version"]), ("panagent", __version__))
 
     def test_generated_session_reimport_retains_upstream_lineage(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
