@@ -25,7 +25,7 @@ class BrowserFallbackTests(unittest.TestCase):
         with self.assertRaisesRegex(AcquisitionError, "restricted to loopback"):
             fetch_share_browser("https://claude.ai/share/fixture", cdp_url="http://browser.example:9222")
 
-    def test_challenged_claude_url_retries_through_browser(self) -> None:
+    def test_challenged_or_unrendered_claude_url_retries_through_browser(self) -> None:
         args = argparse.Namespace(
             source="https://claude.ai/share/fixture",
             source_format=None,
@@ -35,21 +35,22 @@ class BrowserFallbackTests(unittest.TestCase):
             cdp_url=None,
             browser_profile=None,
         )
-        challenge = (FIXTURES / "claude-challenge.html").read_text(encoding="utf-8")
         exported = (FIXTURES / "claude-share-export.json").read_text(encoding="utf-8")
-        with (
-            patch("panagent.cli.fetch_share", return_value=challenge),
-            patch("panagent.cli.fetch_share_browser", return_value=exported) as browser,
-        ):
-            conversation, source_format = _load(args, allow_url=True)
-        self.assertEqual(source_format, "claude-share")
-        self.assertEqual(len(conversation["messages"]), 2)
-        browser.assert_called_once_with(
-            args.source,
-            timeout=20.0,
-            mode="auto",
-            profile=None,
-        )
+        for name in ("cloudflare-challenge.html", "claude-app-shell.html"):
+            with (
+                self.subTest(name),
+                patch("panagent.cli.fetch_share", return_value=(FIXTURES / name).read_text(encoding="utf-8")),
+                patch("panagent.cli.fetch_share_browser", return_value=exported) as browser,
+            ):
+                conversation, source_format = _load(args, allow_url=True)
+                self.assertEqual(source_format, "claude-share")
+                self.assertEqual(len(conversation["messages"]), 2)
+                browser.assert_called_once_with(
+                    args.source,
+                    timeout=20.0,
+                    mode="auto",
+                    profile=None,
+                )
 
     def test_http_acquisition_failure_retries_through_browser(self) -> None:
         args = argparse.Namespace(

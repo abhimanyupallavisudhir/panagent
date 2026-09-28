@@ -114,9 +114,11 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_challenge_has_actionable_failure(self) -> None:
-        result = run_cli("convert", str(FIXTURES / "claude-challenge.html"), "--to", "ir")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("docs/browser-export.md", result.stderr)
+        for name in ("cloudflare-challenge.html", "claude-app-shell.html"):
+            with self.subTest(name):
+                result = run_cli("convert", str(FIXTURES / name), "--to", "ir")
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("docs/browser-export.md", result.stderr)
 
     def test_validate(self) -> None:
         result = run_cli("validate", str(FIXTURES / "codex.jsonl"))

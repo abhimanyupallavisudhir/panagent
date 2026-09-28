@@ -6,9 +6,9 @@ from pathlib import Path
 
 from panagent import __version__
 from panagent.detect import detect_text
-from panagent.errors import AcquisitionError
+from panagent.errors import AcquisitionError, BrowserRequired
 from panagent.readers import read_claude_code, read_codex
-from panagent.web import read_chatgpt_share, read_claude_share
+from panagent.web import is_challenge_page, read_chatgpt_share, read_claude_share
 from panagent.writers import write_claude_code, write_codex
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -223,8 +223,27 @@ class ShareReaderTests(unittest.TestCase):
         self.assertIn("dom_fallback", {item["code"] for item in conv["warnings"]})
 
     def test_claude_challenge_is_not_parser_success(self) -> None:
-        with self.assertRaisesRegex(AcquisitionError, "anti-bot challenge"):
-            read_claude_share(fixture("claude-challenge.html"))
+        with self.assertRaisesRegex(BrowserRequired, "anti-bot challenge"):
+            read_claude_share(fixture("cloudflare-challenge.html"))
+
+    def test_unrendered_claude_share_needs_a_browser(self) -> None:
+        with self.assertRaisesRegex(BrowserRequired, "renders only in a browser"):
+            read_claude_share(fixture("claude-app-shell.html"))
+
+    def test_rendered_claude_share_can_discuss_challenges(self) -> None:
+        # Cloudflare's bot-management script loads on ordinary pages, and a
+        # conversation may quote challenge text; neither makes it a challenge.
+        conv = read_claude_share(fixture("claude-rendered-about-challenges.html"), source_uri="saved.html")
+        self.assertEqual([item["role"] for item in conv["messages"]], ["user", "assistant"])
+        self.assertIn("Verify you are human", conv["messages"][0]["content"][0]["text"])
+
+    def test_challenge_detection_reads_page_structure_not_text(self) -> None:
+        url = "https://claude.ai/share/fixture"
+        self.assertTrue(is_challenge_page(fixture("cloudflare-challenge.html"), url))
+        self.assertTrue(is_challenge_page("<html></html>", url + "?challenge_redirect=1"))
+        self.assertFalse(is_challenge_page(fixture("claude-rendered-about-challenges.html"), url))
+        self.assertFalse(is_challenge_page(fixture("claude-app-shell.html"), url))
+        self.assertFalse(is_challenge_page("<p>Just a moment, Cloudflare says verify you are human</p>", url))
 
     def test_web_share_context_mode_has_explicit_trust_boundary(self) -> None:
         conv = read_claude_share(fixture("claude-share-export.json"))

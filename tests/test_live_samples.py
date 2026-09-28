@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 
-from panagent.errors import AcquisitionError
+from panagent.errors import BrowserRequired
 from panagent.web import fetch_share, read_chatgpt_share, read_claude_share
 
 
@@ -15,12 +15,15 @@ class LiveShareTests(unittest.TestCase):
         self.assertGreaterEqual(len(conv["messages"]), 2)
         self.assertEqual(conv["source"]["uri"], url)
 
-    def test_public_claude_sample_or_explicit_challenge(self) -> None:
+    def test_public_claude_sample_or_explicit_browser_boundary(self) -> None:
+        # Plain HTTP gets either a challenge or (seen 2026-09-28) a 127 KB app
+        # shell whose only marker is Cloudflare's ordinary challenge-platform
+        # script; both must ask for a browser, and only the first is a challenge.
         url = "https://claude.ai/share/3d69a25c-b702-4a46-914f-074ead8cf064"
         text = fetch_share(url)
         try:
             conv = read_claude_share(text, source_uri=url)
-        except AcquisitionError as exc:
-            self.assertIn("anti-bot challenge", str(exc))
+        except BrowserRequired as exc:
+            self.assertRegex(str(exc), "anti-bot challenge|renders only in a browser")
         else:
             self.assertGreaterEqual(len(conv["messages"]), 2)
