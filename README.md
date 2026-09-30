@@ -11,7 +11,7 @@ Supported paths:
 | ChatGPT public share | ✓ | ✓ | ✓ | ✓ |
 | Claude public share (browser-assisted when challenged) | ✓ | ✓ | ✓ | ✓ |
 
-The native formats are undocumented and change over time. The generated files match the currently tested Claude Code message/tool structure and Codex CLI 0.142.5 rollout structure, but provider-specific state such as sandboxes, approvals, file snapshots, encrypted reasoning, token accounting, and compaction cannot always be recreated.
+The native formats are undocumented and change over time. The generated files match the tested Claude Code message/tool and Codex rollout structures, but provider-specific state such as sandboxes, approvals, file snapshots, encrypted reasoning, token accounting, and compaction cannot always be recreated.
 
 ## Install
 
@@ -92,7 +92,7 @@ Expected loss includes provider-only continuation state. For public shares, the 
 
 ## Claude browser acquisition
 
-Claude public shares can return a Cloudflare challenge even though the URL is public. A challenge page is never treated as an empty conversation. With the `browser` extra installed, `--browser headed` opens a dedicated Chrome/Chromium window and waits for the user to complete the challenge. `--cdp-url` instead uses an existing user-controlled Chrome, keeping its authentication and challenge cookies inside that browser.
+Claude public shares can return a Cloudflare challenge even though the URL is public, and otherwise serve plain HTTP an app shell that renders the conversation only in a browser. Neither is treated as an empty conversation; both are browser-fallback cases. A challenge is recognized by the interstitial's structure (its title, challenge form or `_cf_chl_opt` script), never by words in the page, so a conversation that discusses challenges still imports. With the `browser` extra installed, `--browser headed` opens a dedicated Chrome/Chromium window and waits for the user to complete the challenge. `--cdp-url` instead uses an existing user-controlled Chrome, keeping its authentication and challenge cookies inside that browser.
 
 Plain HTTP remains the fast default. `--browser auto` falls back when an interactive desktop is available; non-interactive environments fail with an actionable command rather than hanging. Use `--browser never` to forbid browser startup. If browser automation cannot identify the rendered messages, [the manual JSON/HTML export](docs/browser-export.md) remains available. `panagent` never asks for cookies or access tokens.
 
@@ -109,7 +109,7 @@ The native smoke suite verifies more than self-parsing: Codex App Server must `t
 
 ## Tests
 
-The suite uses redacted synthetic fixtures modeled on native Claude/Codex files, current ChatGPT React Router share hydration, Claude export/rendered DOM, and an anti-bot challenge.
+The suite uses redacted synthetic fixtures modeled on native Claude/Codex files, current ChatGPT React Router share hydration, Claude export/rendered DOM, an unrendered Claude app shell, and an anti-bot challenge.
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
@@ -128,6 +128,8 @@ PANAGENT_NATIVE_TESTS=1 PYTHONPATH=src python -m unittest tests.test_native_cli.
 PANAGENT_CLAUDE_TESTS=1 PANAGENT_CLAUDE_COMMAND=claude \
   PYTHONPATH=src python -m unittest tests.test_native_cli.ClaudeNativeCompatibilityTests -v
 ```
+
+The default suite also has the Codex release pinned by a sibling `../karmax` checkout (`node_modules/@openai/codex`) read and resume a generated rollout. It skips when that checkout has no installed dependencies. Set `PANAGENT_PINNED_CODEX` to point it at another binary.
 
 The plain-HTTP Claude live test accepts an explicit challenge only as an acquisition-boundary result. Browser-backed acquisition is tested separately because completing a challenge is a human action and must not be bypassed by CI.
 

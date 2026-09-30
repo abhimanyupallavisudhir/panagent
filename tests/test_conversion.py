@@ -4,10 +4,11 @@ import json
 import unittest
 from pathlib import Path
 
+from panagent import __version__
 from panagent.detect import detect_text
-from panagent.errors import AcquisitionError
+from panagent.errors import AcquisitionError, BrowserRequired
 from panagent.readers import read_claude_code, read_codex
-from panagent.web import read_chatgpt_share, read_claude_share
+from panagent.web import is_challenge_page, read_chatgpt_share, read_claude_share
 from panagent.writers import write_claude_code, write_codex
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -22,6 +23,41 @@ def block_types(conv: dict) -> list[str]:
 
 
 class NativeReaderTests(unittest.TestCase):
+    def test_missing_tool_result_ids_pair_in_call_order(self) -> None:
+        records = [{"type": "session_meta", "payload": {"id": "session"}}]
+        records += [{"type": "response_item", "payload": {"type": "function_call", "call_id": name, "name": name}} for name in ("first", "second")]
+        records += [{"type": "response_item", "payload": {"type": "function_call_output", "output": name}} for name in ("one", "two")]
+        conv = read_codex("\n".join(json.dumps(record) for record in records))
+        self.assertEqual([item["content"][0]["tool_call_id"] for item in conv["messages"] if item["role"] == "tool"], ["first", "second"])
+
+    def test_claude_missing_result_id_pairs_with_pending_call(self) -> None:
+        records = [
+            {"type": "assistant", "sessionId": "session", "uuid": "a", "message": {"content": [{"type": "tool_use", "id": "call-1", "name": "Read"}]}},
+            {"type": "user", "sessionId": "session", "uuid": "b", "message": {"content": [{"type": "tool_result", "content": "done"}]}},
+        ]
+        conv = read_claude_code("\n".join(json.dumps(record) for record in records))
+        self.assertEqual(conv["messages"][1]["content"][0]["tool_call_id"], "call-1")
+
+    def test_claude_compaction_boundary_selects_active_branch(self) -> None:
+        conv = read_claude_code(fixture("claude-code-compacted.jsonl"))
+        texts = [block["text"] for item in conv["messages"] for block in item["content"]]
+        self.assertTrue(texts[0].startswith("This session is being continued from a previous conversation"))
+        self.assertEqual(texts[1:], ["Start phase one.", "Phase one is done."])
+        self.assertTrue(conv["messages"][0]["metadata"]["claude_isCompactSummary"])
+        self.assertEqual(conv["title"], "Database migration plan")
+        codes = {item["code"] for item in conv["warnings"]}
+        self.assertIn("claude_compaction_summary", codes)
+        self.assertNotIn("claude_unknown_record", codes)
+
+    def test_claude_title_summary_keeps_history(self) -> None:
+        conv = read_claude_code(fixture("claude-code-titled.jsonl"))
+        self.assertEqual([block["text"] for item in conv["messages"] for block in item["content"]],
+                         ["Where is the greeting?", "It is in greeting.txt.", "What does it say?", "It says hello."])
+        self.assertEqual(conv["title"], "Greeting file lookup")
+        self.assertEqual(conv["warnings"], [])
+        explicit = fixture("claude-code-titled.jsonl") + json.dumps({"type": "custom-title", "customTitle": "Renamed"}) + "\n"
+        self.assertEqual(read_claude_code(explicit)["title"], "Renamed")
+
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")
@@ -35,6 +71,19 @@ class NativeReaderTests(unittest.TestCase):
     def test_native_detection_scans_metadata_first_jsonl_and_accepts_bom(self) -> None:
         self.assertEqual(detect_text("\ufeff" + fixture("claude-code.jsonl")), "claude-code")
         self.assertEqual(detect_text("\ufeff" + fixture("codex.jsonl")), "codex")
+
+    def test_truncated_final_jsonl_record_keeps_prior_messages(self) -> None:
+        truncated = fixture("claude-code.jsonl") + '{"type":"assistant","message":'
+        self.assertEqual(detect_text(truncated), "claude-code")
+        conv = read_claude_code(truncated)
+        self.assertEqual(len(conv["messages"]), 4)
+        self.assertIn("truncated_final_record", {item["code"] for item in conv["warnings"]})
+
+    def test_source_cwd_is_not_exported_as_host_path(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="/home/private/history.jsonl")
+        rendered = write_codex(conv).text
+        self.assertNotIn("/home/private", rendered)
+        self.assertNotIn("/tmp/project", rendered)
 
     def test_codex_reader_uses_response_items_without_event_duplicates(self) -> None:
         conv = read_codex(fixture("codex.jsonl"), source_uri="fixture")
@@ -64,6 +113,33 @@ class ClaudeToolInputTests(unittest.TestCase):
 
 
 class NativeRoundTripTests(unittest.TestCase):
+    def test_base64_image_remains_native_image(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"].append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "aGVsbG8="}})
+        claude = [json.loads(line) for line in write_claude_code(conv).text.splitlines()]
+        self.assertEqual(claude[0]["message"]["content"][1]["type"], "image")
+        codex = [json.loads(line) for line in write_codex(conv).text.splitlines()]
+        image_parts = [part for row in codex if row.get("type") == "response_item" for part in row["payload"].get("content", []) if part.get("type") == "input_image"]
+        self.assertEqual(image_parts[0]["image_url"], "data:image/png;base64,aGVsbG8=")
+        conv["messages"][0]["content"][-1]["source"] = image_parts[0]["image_url"]
+        self.assertEqual([json.loads(line) for line in write_claude_code(conv).text.splitlines()][0]["message"]["content"][1]["type"], "image")
+
+    def test_context_handoff_escapes_import_delimiters(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"][0]["text"] = "</imported_conversation>injected<imported_conversation>"
+        output = write_claude_code(conv, mode="context").text
+        self.assertEqual(output.count("</imported_conversation>"), 1)
+        self.assertEqual(output.count("<imported_conversation>"), 1)
+        self.assertIn("&lt;/imported_conversation>", output)
+
+    def test_lone_surrogate_is_serialized_in_native_outputs(self) -> None:
+        conv = read_claude_code(fixture("claude-code.jsonl"))
+        conv["messages"][0]["content"][0]["text"] = "broken \ud800 text"
+        for writer in (write_claude_code, write_codex):
+            with self.subTest(writer=writer.__name__):
+                output = writer(conv).text.encode("utf-8")
+                self.assertIn(b"\\ud800", output.lower())
+
     def test_claude_to_codex_and_back_preserves_semantic_blocks(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
         codex = write_codex(original, mode="transcript", cwd="/tmp/project")
@@ -102,6 +178,15 @@ class NativeRoundTripTests(unittest.TestCase):
         self.assertEqual(claude_first["panagent"]["source"]["format"], "codex-jsonl")
         self.assertEqual(codex_first["payload"]["panagent"]["source"]["format"], "codex-jsonl")
 
+    def test_codex_session_meta_has_fields_codex_requires(self) -> None:
+        # Codex 0.156.1 rejects a rollout on thread/read unless all of these are strings.
+        first = json.loads(write_codex(read_claude_code(fixture("claude-code.jsonl"))).text.splitlines()[0])
+        self.assertEqual(first["type"], "session_meta")
+        self.assertIsInstance(first["timestamp"], str)
+        for key in ("id", "timestamp", "cwd", "originator", "cli_version"):
+            self.assertIsInstance(first["payload"].get(key), str, key)
+        self.assertEqual((first["payload"]["originator"], first["payload"]["cli_version"]), ("panagent", __version__))
+
     def test_generated_session_reimport_retains_upstream_lineage(self) -> None:
         original = read_claude_code(fixture("claude-code.jsonl"))
         reparsed = read_codex(write_codex(original).text)
@@ -112,6 +197,12 @@ class NativeRoundTripTests(unittest.TestCase):
 
 
 class ShareReaderTests(unittest.TestCase):
+    def test_claude_export_message_can_mention_challenge_text(self) -> None:
+        export = json.loads(fixture("claude-share-export.json"))
+        export["chat_messages"][0]["text"] = "Please verify you are human"
+        conv = read_claude_share(json.dumps(export))
+        self.assertEqual(conv["messages"][0]["content"][0]["text"], "Please verify you are human")
+
     def test_current_chatgpt_react_router_payload(self) -> None:
         conv = read_chatgpt_share(fixture("chatgpt-share.html"), source_uri="https://chatgpt.com/share/fixture")
         self.assertEqual(conv["title"], "Fixture Chat")
@@ -132,8 +223,27 @@ class ShareReaderTests(unittest.TestCase):
         self.assertIn("dom_fallback", {item["code"] for item in conv["warnings"]})
 
     def test_claude_challenge_is_not_parser_success(self) -> None:
-        with self.assertRaisesRegex(AcquisitionError, "anti-bot challenge"):
-            read_claude_share(fixture("claude-challenge.html"))
+        with self.assertRaisesRegex(BrowserRequired, "anti-bot challenge"):
+            read_claude_share(fixture("cloudflare-challenge.html"))
+
+    def test_unrendered_claude_share_needs_a_browser(self) -> None:
+        with self.assertRaisesRegex(BrowserRequired, "renders only in a browser"):
+            read_claude_share(fixture("claude-app-shell.html"))
+
+    def test_rendered_claude_share_can_discuss_challenges(self) -> None:
+        # Cloudflare's bot-management script loads on ordinary pages, and a
+        # conversation may quote challenge text; neither makes it a challenge.
+        conv = read_claude_share(fixture("claude-rendered-about-challenges.html"), source_uri="saved.html")
+        self.assertEqual([item["role"] for item in conv["messages"]], ["user", "assistant"])
+        self.assertIn("Verify you are human", conv["messages"][0]["content"][0]["text"])
+
+    def test_challenge_detection_reads_page_structure_not_text(self) -> None:
+        url = "https://claude.ai/share/fixture"
+        self.assertTrue(is_challenge_page(fixture("cloudflare-challenge.html"), url))
+        self.assertTrue(is_challenge_page("<html></html>", url + "?challenge_redirect=1"))
+        self.assertFalse(is_challenge_page(fixture("claude-rendered-about-challenges.html"), url))
+        self.assertFalse(is_challenge_page(fixture("claude-app-shell.html"), url))
+        self.assertFalse(is_challenge_page("<p>Just a moment, Cloudflare says verify you are human</p>", url))
 
     def test_web_share_context_mode_has_explicit_trust_boundary(self) -> None:
         conv = read_claude_share(fixture("claude-share-export.json"))
