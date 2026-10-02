@@ -95,6 +95,69 @@ class NativeReaderTests(unittest.TestCase):
         self.assertIn("codex_turn_context_target_specific", {item["code"] for item in conv["warnings"]})
 
 
+class CodexContextTests(unittest.TestCase):
+    """karmax legibench3#18: a 44 MB Codex session became an 11.9M-token Claude prompt."""
+
+    PNG = "data:image/png;base64,aGVsbG8="
+
+    def records(self, *items: dict) -> str:
+        return "\n".join(json.dumps(item) for item in [{"type": "session_meta", "payload": {"id": "session"}}, *items])
+
+    @staticmethod
+    def item(payload: dict) -> dict:
+        return {"type": "response_item", "payload": payload}
+
+    def test_structured_tool_output_keeps_its_image_as_an_image(self) -> None:
+        conv = read_codex(self.records(
+            self.item({"type": "custom_tool_call", "call_id": "c1", "name": "exec", "input": "plot()"}),
+            self.item({"type": "custom_tool_call_output", "call_id": "c1", "output": [
+                {"type": "input_text", "text": "Script completed"}, {"type": "input_image", "image_url": self.PNG}]}),
+        ))
+        result = next(block for item in conv["messages"] for block in item["content"] if block["type"] == "tool_result")
+        self.assertEqual(result["content"], "Script completed")
+        self.assertEqual(result["images"], [{"type": "image", "source": self.PNG}])
+        claude = [json.loads(line) for line in write_claude_code(conv).text.splitlines()]
+        native = next(block for record in claude if isinstance(record["message"]["content"], list)
+                      for block in record["message"]["content"] if block["type"] == "tool_result")
+        self.assertEqual(native["content"], [{"type": "text", "text": "Script completed"},
+                                             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "aGVsbG8="}}])
+        self.assertNotIn("base64", json.dumps(native["content"][0]))
+        # ...and back: the image survives a Claude → Codex round trip as an image.
+        again = read_claude_code(write_claude_code(conv).text)
+        result = next(block for item in again["messages"] for block in item["content"] if block["type"] == "tool_result")
+        self.assertEqual(result["content"], "Script completed")
+        self.assertEqual(result["images"][0]["source"]["data"], "aGVsbG8=")
+        codex = [json.loads(line) for line in write_codex(again).text.splitlines()]
+        output = next(row["payload"]["output"] for row in codex if row.get("payload", {}).get("type") == "function_call_output")
+        self.assertEqual(output, [{"type": "input_text", "text": "Script completed"}, {"type": "input_image", "image_url": self.PNG}])
+
+    def test_history_before_the_last_compaction_keeps_only_its_messages(self) -> None:
+        def turn(n: int) -> list[dict]:
+            return [
+                self.item({"type": "message", "role": "user", "content": [{"type": "input_text", "text": f"ask {n}"}]}),
+                self.item({"type": "reasoning", "summary": [{"text": f"think {n}"}]}),
+                self.item({"type": "function_call", "call_id": f"c{n}", "name": "exec", "arguments": "{}"}),
+                self.item({"type": "function_call_output", "call_id": f"c{n}", "output": "x" * 1000}),
+                self.item({"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": f"done {n}"}]}),
+            ]
+        compacted = {"type": "compacted", "payload": {"message": "", "replacement_history": [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "ask 1"}]},
+            {"type": "compaction", "encrypted_content": "opaque"}]}}
+        conv = read_codex(self.records(*turn(1), compacted, *turn(2), compacted, *turn(3)))
+        texts = [(item["role"], block["type"], block.get("text")) for item in conv["messages"] for block in item["content"]]
+        self.assertEqual(texts[:4], [("user", "text", "ask 1"), ("assistant", "text", "done 1"),
+                                     ("user", "text", "ask 2"), ("assistant", "text", "done 2")])
+        # After the last compaction the session converts in full, tools included.
+        self.assertEqual([kind for _, kind, _ in texts[4:]], ["text", "reasoning", "tool_call", "tool_result", "text"])
+        self.assertIn("codex_compaction_digest", {item["code"] for item in conv["warnings"]})
+        # No tool result is left without its call, so the converted session resumes.
+        claude = [json.loads(line) for line in write_claude_code(conv).text.splitlines()]
+        uses = [b["id"] for r in claude if isinstance(r["message"]["content"], list) for b in r["message"]["content"] if b["type"] == "tool_use"]
+        results = [b["tool_use_id"] for r in claude if isinstance(r["message"]["content"], list) for b in r["message"]["content"] if b["type"] == "tool_result"]
+        self.assertEqual(uses, ["c3"])
+        self.assertEqual(results, ["c3"])
+
+
 class ClaudeToolInputTests(unittest.TestCase):
     def test_free_form_and_non_object_arguments_remain_resumable(self) -> None:
         for value in ["print('hello')", "", None, [], [1, "two"], 42, False, {"command": "pwd"}]:
