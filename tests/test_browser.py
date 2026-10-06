@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import argparse
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from panagent.browser import fetch_share_browser
-from panagent.cli import _load
+from panagent.api import load
 from panagent.errors import AcquisitionError
 from panagent.web import fetch_share, _ShareRedirectHandler
 
@@ -26,83 +25,51 @@ class BrowserFallbackTests(unittest.TestCase):
             fetch_share_browser("https://claude.ai/share/fixture", cdp_url="http://browser.example:9222")
 
     def test_challenged_or_unrendered_claude_url_retries_through_browser(self) -> None:
-        args = argparse.Namespace(
-            source="https://claude.ai/share/fixture",
-            source_format=None,
-            timeout=1.0,
-            browser="auto",
-            browser_timeout=20.0,
-            cdp_url=None,
-            browser_profile=None,
-        )
+        url = "https://claude.ai/share/fixture"
+        options = dict(timeout=1.0, browser="auto", browser_timeout=20.0)
         exported = (FIXTURES / "claude-share-export.json").read_text(encoding="utf-8")
         for name in ("cloudflare-challenge.html", "claude-app-shell.html"):
             with (
                 self.subTest(name),
-                patch("panagent.cli.fetch_share", return_value=(FIXTURES / name).read_text(encoding="utf-8")),
-                patch("panagent.cli.fetch_share_browser", return_value=exported) as browser,
+                patch("panagent.api.fetch_share", return_value=(FIXTURES / name).read_text(encoding="utf-8")),
+                patch("panagent.api.fetch_share_browser", return_value=exported) as browser,
             ):
-                conversation, source_format = _load(args, allow_url=True)
-                self.assertEqual(source_format, "claude-share")
+                conversation = load(url, **options)
+                self.assertEqual(conversation["source"]["provider"], "anthropic")
                 self.assertEqual(len(conversation["messages"]), 2)
-                browser.assert_called_once_with(
-                    args.source,
-                    timeout=20.0,
-                    mode="auto",
-                    profile=None,
-                )
+                browser.assert_called_once_with(url, timeout=20.0, mode="auto", cdp_url=None, profile=None)
 
     def test_http_acquisition_failure_retries_through_browser(self) -> None:
-        args = argparse.Namespace(
-            source="https://claude.ai/share/fixture",
-            source_format=None,
-            timeout=1.0,
-            browser="auto",
-            browser_timeout=20.0,
-            cdp_url=None,
-            browser_profile=None,
-        )
+        url = "https://claude.ai/share/fixture"
+        options = dict(timeout=1.0, browser="auto", browser_timeout=20.0)
         exported = (FIXTURES / "claude-share-export.json").read_text(encoding="utf-8")
         with (
-            patch("panagent.cli.fetch_share", side_effect=AcquisitionError("HTTP 403")),
-            patch("panagent.cli.fetch_share_browser", return_value=exported) as browser,
+            patch("panagent.api.fetch_share", side_effect=AcquisitionError("share request returned HTTP 403", status=403)),
+            patch("panagent.api.fetch_share_browser", return_value=exported) as browser,
         ):
-            conversation, source_format = _load(args, allow_url=True)
-        self.assertEqual(source_format, "claude-share")
+            conversation = load(url, **options)
+        self.assertEqual(conversation["source"]["provider"], "anthropic")
         self.assertEqual(len(conversation["messages"]), 2)
         browser.assert_called_once()
 
     def test_network_failure_does_not_launch_browser(self) -> None:
-        args = argparse.Namespace(source="https://claude.ai/share/fixture", source_format=None, timeout=1.0,
-                                  browser="auto", browser_timeout=20.0, cdp_url=None, browser_profile=None)
-        with (patch("panagent.cli.fetch_share", side_effect=AcquisitionError("could not fetch share URL: timeout")),
-              patch("panagent.cli.fetch_share_browser") as browser):
+        url = "https://claude.ai/share/fixture"
+        options = dict(timeout=1.0, browser="auto", browser_timeout=20.0)
+        with (patch("panagent.api.fetch_share", side_effect=AcquisitionError("could not fetch share URL: timeout")),
+              patch("panagent.api.fetch_share_browser") as browser):
             with self.assertRaisesRegex(AcquisitionError, "timeout"):
-                _load(args, allow_url=True)
+                load(url, **options)
         browser.assert_not_called()
 
     def test_cdp_uses_browser_without_plain_http(self) -> None:
-        args = argparse.Namespace(
-            source="https://claude.ai/share/fixture",
-            source_format=None,
-            timeout=1.0,
-            browser="auto",
-            browser_timeout=20.0,
-            cdp_url="http://127.0.0.1:9222",
-            browser_profile=None,
-        )
+        url = "https://claude.ai/share/fixture"
+        options = dict(timeout=1.0, browser="auto", browser_timeout=20.0, cdp_url="http://127.0.0.1:9222")
         exported = (FIXTURES / "claude-share-export.json").read_text(encoding="utf-8")
         with (
-            patch("panagent.cli.fetch_share") as plain,
-            patch("panagent.cli.fetch_share_browser", return_value=exported) as browser,
+            patch("panagent.api.fetch_share") as plain,
+            patch("panagent.api.fetch_share_browser", return_value=exported) as browser,
         ):
-            conversation, _ = _load(args, allow_url=True)
+            conversation = load(url, **options)
         self.assertEqual(len(conversation["messages"]), 2)
         plain.assert_not_called()
-        browser.assert_called_once_with(
-            args.source,
-            timeout=20.0,
-            mode="auto",
-            cdp_url=args.cdp_url,
-            profile=None,
-        )
+        browser.assert_called_once_with(url, timeout=20.0, mode="auto", cdp_url="http://127.0.0.1:9222", profile=None)

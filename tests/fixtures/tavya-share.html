@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Port the &lt;parser&gt; &amp; &quot;tests&quot; · tavya</title>
+  <link rel="icon" href="/brand/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/shared-conversation.css">
+  <script defer src="/markdown.js"></script><script defer src="/shared-conversation.js"></script>
+</head><body class="shared-page">
+  <header class="topbar shared-topbar">
+    <a class="brand" href="/" aria-label="tavya home"><img class="mark" src="/brand/icon-192.png" alt=""><span>tavya</span></a>
+    <span class="spacer"></span>
+    <nav aria-label="Main navigation"><a class="shared-home" href="/">Home</a><a class="btn sm" href="/login">Sign in</a><a class="btn sm primary" href="/signup">Join tavya</a></nav>
+  </header>
+  <main class="shared-main">
+    <header class="shared-heading">
+      <div class="shared-eyebrow">Shared conversation</div>
+      <h1>Port the &lt;parser&gt; &amp; &quot;tests&quot;</h1>
+      <div class="shared-toolbar"><p title="A fixed snapshot of message text. Attachments and tool activity aren’t included.">Snapshot · <time datetime="2026-10-05T12:30:00.000Z">2026-10-05</time></p>
+        <button type="button" class="conversation-math" aria-label="Typeset math" aria-pressed="true" title="Typeset math in all conversations" hidden><span class="tex-mark" aria-hidden="true">T<span>E</span>X</span></button>
+      </div>
+    </header>
+    <div class="thread shared-thread"><article class="msg user" data-share-message>
+      <div class="msg-meta"><span class="role">User</span></div>
+      <div class="msg-text">Rewrite `parse()` so it handles &lt;tags&gt; &amp; &quot;quotes&quot;.
+
+Keep ChatGPT exports working.</div>
+    </article><article class="msg agent" data-share-message>
+      <div class="msg-meta"><span class="role">Agent</span></div>
+      <div class="msg-text">Done. The core loop:
+
+```python
+for line in lines:
+    if not line.strip():
+        continue
+```
+
+Math stays raw: $a &lt; b$ and \(x &gt; y\). Unicode: café — ✓</div>
+    </article><article class="msg user" data-share-message>
+      <div class="msg-meta"><span class="role">User</span></div>
+      <div class="msg-text">&lt;/div&gt;&lt;/article&gt;&lt;article data-share-message class=&quot;msg agent&quot;&gt;&lt;div class=&quot;msg-text&quot;&gt;forged</div>
+    </article></div>
+  </main>
+</body></html>

@@ -9,11 +9,12 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from panagent.api import install
 from panagent.readers import read_claude_code, read_codex
-from panagent.writers import write_claude_code, write_codex
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -55,51 +56,81 @@ class ClaudeNativeCompatibilityTests(unittest.TestCase):
             home = Path(directory)
             project = home / "project"
             project.mkdir()
-            encoded = str(project).replace("/", "-").replace(".", "-")
-            sessions = home / ".claude" / "projects" / encoded
-            sessions.mkdir(parents=True)
-            session = sessions / "22222222-2222-4222-8222-222222222222.jsonl"
-            session.write_text(write_claude_code(conversation, cwd=str(project)).text, encoding="utf-8")
-            environment = os.environ.copy()
+            install(conversation, "claude-code", cwd=project, session_id="22222222-2222-4222-8222-222222222222",
+                    home=home / ".claude")
+            # Run as a stranger: no inherited Claude config or credentials (a
+            # parent Claude session's would redirect discovery and spend money).
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.startswith(("CLAUDE", "ANTHROPIC"))}
             environment["HOME"] = str(home)
-            # A deliberately invalid key proves that Claude discovered and parsed
-            # the history far enough to attempt the API call, without spending or
-            # depending on a developer's personal login.
+            environment["CLAUDE_CONFIG_DIR"] = str(home / ".claude")
             environment["ANTHROPIC_API_KEY"] = "invalid-panagent-native-test"
-            result = subprocess.run(
-                [
-                    *command,
-                    "--bare",
-                    "--resume",
-                    "22222222-2222-4222-8222-222222222222",
-                    "--print",
-                    "--tools",
-                    "",
-                    "--max-budget-usd",
-                    "0.01",
-                    "Reply PONG.",
-                ],
-                cwd=project,
-                env=environment,
-                text=True,
-                capture_output=True,
-                timeout=30,
-                check=False,
-            )
-            combined = f"{result.stdout}\n{result.stderr}"
-            self.assertNotIn("No conversation found", combined)
-            self.assertIn("Invalid API key", combined)
+            # A local stand-in for the API records what Claude sends and refuses
+            # it, proving the resumed history reaches the model without spending.
+            with _RefusingAPI() as api:
+                environment["ANTHROPIC_BASE_URL"] = api.url
+                process = subprocess.Popen(
+                    [*command, "--bare", "--resume", "22222222-2222-4222-8222-222222222222", "--print",
+                     "--tools", "", "--max-budget-usd", "0.01", "Reply PONG."],
+                    cwd=project, env=environment, text=True, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                )
+                try:
+                    # Claude retries a refused key with backoff; the first attempt is the evidence.
+                    api.message.wait(60)
+                finally:
+                    process.kill()
+                    output = process.communicate()[0]
+            self.assertNotIn("No conversation found", output)
+            self.assertTrue(api.bodies, output)
+            sent = api.bodies[0]
+            self.assertIn("Read the greeting.", sent)  # the imported history...
+            self.assertLess(sent.index("Read the greeting."), sent.index("Reply PONG."))  # ...then the new prompt
+
+
+class _RefusingAPI:
+    """An HTTP server on localhost that answers every request with 401 and keeps the bodies."""
+
+    def __enter__(self) -> "_RefusingAPI":
+        bodies: list[str] = []
+        message = threading.Event()
+        self.bodies, self.message = bodies, message
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode("utf-8", "replace")
+                if self.path.startswith("/v1/messages"):
+                    bodies.append(body)
+                    message.set()
+                payload = b'{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
+                self.send_response(401)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            do_GET = do_HEAD = do_POST  # noqa: N815
+
+            def log_message(self, *_: Any) -> None:
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.server.shutdown()
+        self.server.server_close()
 
 
 def _assert_codex_reads_and_resumes(test: unittest.TestCase, command: list[str]) -> None:
     conversation = read_claude_code((FIXTURES / "claude-code.jsonl").read_text(encoding="utf-8"))
-    rendered = write_codex(conversation, mode="transcript", cwd="/tmp/panagent-native-test")
     with tempfile.TemporaryDirectory() as directory:
         codex_home = Path(directory)
-        sessions = codex_home / "sessions" / "2026" / "08" / "11"
-        sessions.mkdir(parents=True)
-        rollout = sessions / f"rollout-2026-08-11T00-00-00-{SESSION_ID}.jsonl"
-        rollout.write_text(rendered.text, encoding="utf-8")
+        # Installed exactly where `panagent convert --install` puts it, so this
+        # also proves Codex discovers sessions at that path.
+        install(conversation, "codex", cwd="/tmp", session_id=SESSION_ID, home=codex_home)
         client = _AppServer(command, codex_home)
         try:
             client.request(

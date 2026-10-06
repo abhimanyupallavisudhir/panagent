@@ -60,8 +60,10 @@ Roles are `system`, `developer`, `user`, `assistant`, and `tool`. Content block 
 - `reasoning`: visible `text`, optional `visibility`; opaque/hidden reasoning is never fabricated
 - `tool_call`: `id`, `name`, `arguments`
 - `tool_result`: `tool_call_id`, `content`, `is_error`
-- `image`: source reference and optional alternative text
-- `attachment`: name/source reference and metadata
+- `image`: `source` (a URL, a `data:` URL or `{"type": "base64", "media_type", "data"}`) and optional `alt`
+- `attachment`: `name`, optional `media_type`, and optional `text` holding the file's extracted text when the source kept it
+
+`source.kind` is `native-session` for an agent's own history, and one of `public-share-snapshot`, `browser-export`, `browser-rendered-export` or `account-export` for a visible web-chat snapshot. Writers use the kind to choose their default mode: snapshots become one guarded context message, and native sessions become transcripts. Source formats include `claude-code-jsonl`, `codex-jsonl`, `chatgpt-share-html`, `chatgpt-export-json`, `claude-share-export`, `claude-share-html` and `tavya-share-html`.
 
 Warnings use stable machine-readable codes. `warning` means a mapping was lossy or needs attention; `info` documents an inherent source limitation. Unknown native records are skipped with a warning rather than copied into a misleading generic message.
 

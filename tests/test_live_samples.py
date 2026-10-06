@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 
-from panagent.errors import BrowserRequired
+from panagent.errors import AcquisitionError, BrowserRequired
 from panagent.web import fetch_share, read_chatgpt_share, read_claude_share
 
 
@@ -27,3 +27,9 @@ class LiveShareTests(unittest.TestCase):
             self.assertRegex(str(exc), "anti-bot challenge|renders only in a browser")
         else:
             self.assertGreaterEqual(len(conv["messages"]), 2)
+
+    def test_tavya_unknown_share_is_not_found(self) -> None:
+        url = "https://tavya.io/share/conversations/" + "A" * 43
+        with self.assertRaisesRegex(AcquisitionError, "share not found") as caught:
+            fetch_share(url)
+        self.assertEqual(caught.exception.status, 404)
