@@ -106,7 +106,7 @@ Non-interactive runs fail with the command to run instead of hanging, and `--bro
 
 ## Limits
 
-The native Claude Code and Codex formats are undocumented and change over time. The test suite checks the output against real CLIs: Codex must read and resume a session written by `--install`, and Claude Code must resume one and send its history to a local stand-in for the API, so the test spends nothing. Provider-only state cannot be recreated: sandboxes, approvals, file snapshots, encrypted reasoning, token accounting and compaction state.
+The native Claude Code and Codex formats are undocumented and change over time. Opt-in compatibility tests check the output against the real CLIs (see [Development](#development)): Codex must read and resume a session written by `--install`, and Claude Code must resume one and send its history to a local stand-in for the API, so the test spends nothing. Provider-only state cannot be recreated: sandboxes, approvals, file snapshots, encrypted reasoning, token accounting and compaction state.
 
 panagent converts conversations only. It does not migrate credentials, MCP servers, hooks, plugins, repositories or running processes, and it does not bypass access controls. Anything it cannot carry over is reported as a warning.
 
