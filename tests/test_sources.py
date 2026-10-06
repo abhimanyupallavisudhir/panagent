@@ -129,6 +129,11 @@ class ChatGPTExportTests(unittest.TestCase):
                 codes = {item["code"] for item in conv["warnings"]}
                 self.assertTrue({"chatgpt_image_unavailable", "chatgpt_model_context_not_message"} <= codes)
 
+    def test_list_counts_the_messages_a_conversion_keeps(self) -> None:
+        from panagent.web import list_conversations
+        rows = list_conversations(fixture("chatgpt-export.json"), "chatgpt-share")
+        self.assertEqual([(row["title"], row["messages"]) for row in rows], [("Plot the data", 4), ("Second chat", 2)])
+
     def test_unknown_choice_is_an_error(self) -> None:
         with self.assertRaisesRegex(FormatError, "no conversation"):
             panagent.parse(fixture("chatgpt-export.json"), conversation="missing")

@@ -197,7 +197,7 @@ def _chatgpt_conversation(payload: dict[str, Any], source_format: str, kind: str
         role = author.get("role")
         if role not in {"system", "developer", "user", "assistant", "tool"}:
             continue
-        if (native.get("metadata") or {}).get("is_visually_hidden_from_conversation"):
+        if not _chatgpt_visible(native):
             continue
         blocks = _chatgpt_content(native.get("content"), conv, index)
         if not blocks:
@@ -224,6 +224,14 @@ def _chatgpt_conversation(payload: dict[str, Any], source_format: str, kind: str
         )
     _add_snapshot_warnings(conv, "ChatGPT")
     return validate_conversation(conv)
+
+
+_CHATGPT_CONTEXT_KINDS = {"model_editable_context", "user_editable_context"}
+
+
+def _chatgpt_visible(native: Any) -> bool:
+    """Not hidden scaffolding (an empty system message, for instance)."""
+    return isinstance(native, dict) and not (native.get("metadata") or {}).get("is_visually_hidden_from_conversation")
 
 
 def is_challenge_page(html: str, url: str = "") -> bool:
@@ -393,7 +401,7 @@ def _chatgpt_content(value: Any, conv: dict[str, Any], index: int) -> list[dict[
         return results
     if kind == "reasoning_recap":
         return [{"type": "reasoning", "text": str(value.get("content", "")), "visibility": "recap"}]
-    if kind in {"model_editable_context", "user_editable_context"}:
+    if kind in _CHATGPT_CONTEXT_KINDS:
         warning(conv, "chatgpt_model_context_not_message", "ChatGPT memory and custom-instruction context was omitted from message history.")
         return []
     warning(conv, "chatgpt_content_not_represented", f"ChatGPT content type {kind!r} was not represented.", path=f"messages[{index}]")
@@ -538,7 +546,8 @@ def list_conversations(text: str, source_format: str) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         if source_format == "chatgpt-share" and isinstance(item.get("mapping"), dict):
-            count = sum(1 for node in item["mapping"].values() if isinstance(node, dict) and isinstance(node.get("message"), dict))
+            count = sum(1 for node in _chatgpt_active_chain(item) if _chatgpt_visible(node.get("message"))
+                        and (node["message"].get("content") or {}).get("content_type") not in _CHATGPT_CONTEXT_KINDS)
         elif source_format == "claude-share" and isinstance(item.get("chat_messages"), list):
             count = len(item["chat_messages"])
         else:
