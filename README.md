@@ -127,7 +127,7 @@ PANAGENT_CLAUDE_TESTS=1 PANAGENT_CLAUDE_COMMAND=claude \
 
 When a sibling `../karmax` checkout has its dependencies installed, the default suite also runs the Codex release that checkout pins. Point `PANAGENT_PINNED_CODEX` at another binary to use that one instead.
 
-To make a release, bump `__version__` in `src/panagent/__init__.py`, add a `CHANGELOG.md` entry and push a `vX.Y.Z` tag. GitHub Actions then tests, builds and publishes the release to PyPI.
+To make a release, bump `__version__` in `src/panagent/__init__.py` and add a `CHANGELOG.md` entry. Merging that to master is the release. GitHub Actions tests and builds it, publishes it to PyPI through trusted publishing (no token is stored), and tags it with a GitHub release.
 
 ## License
 

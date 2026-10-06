@@ -11,7 +11,7 @@
 - Redirects must stay within the same kind of share. `chat.openai.com/share/…` links are accepted.
 - The CLI prints one line per warning code, with a count, instead of one line per record.
 - The conversion report's `source_format` is the conversation's own source format (for example `claude-code-jsonl`).
-- Packaging: PyPI metadata, `py.typed`, a tag-triggered release workflow with trusted publishing, and a build check in CI.
+- Packaging: PyPI metadata, `py.typed`, a build check in CI, and a release workflow. Merging a new `__version__` to master publishes it to PyPI through trusted publishing, then tags it and creates a GitHub release.
 - Tests: the Claude Code compatibility test no longer inherits the parent shell's Claude configuration or credentials. It now checks that the resumed history is actually sent to the model, using a local stand-in for the API.
 
 ## 0.2.0
