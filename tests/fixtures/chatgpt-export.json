@@ -1,0 +1,227 @@
+[
+ {
+  "title": "Plot the data",
+  "create_time": 1767225600.0,
+  "update_time": 1767225700.0,
+  "conversation_id": "68000000-0000-4000-8000-000000000001",
+  "id": "68000000-0000-4000-8000-000000000001",
+  "default_model_slug": "gpt-fixture",
+  "current_node": "a2",
+  "mapping": {
+   "root": {
+    "id": "root",
+    "parent": null,
+    "children": [
+     "sys"
+    ],
+    "message": null
+   },
+   "sys": {
+    "id": "sys",
+    "parent": "root",
+    "children": [
+     "ctx"
+    ],
+    "message": {
+     "id": "sys",
+     "author": {
+      "role": "system"
+     },
+     "create_time": null,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       ""
+      ]
+     },
+     "status": "finished_successfully",
+     "metadata": {
+      "is_visually_hidden_from_conversation": true
+     }
+    }
+   },
+   "ctx": {
+    "id": "ctx",
+    "parent": "sys",
+    "children": [
+     "u1"
+    ],
+    "message": {
+     "id": "ctx",
+     "author": {
+      "role": "user"
+     },
+     "create_time": null,
+     "content": {
+      "content_type": "user_editable_context",
+      "user_profile": "secret profile",
+      "user_instructions": "be terse"
+     },
+     "status": "finished_successfully"
+    }
+   },
+   "u1": {
+    "id": "u1",
+    "parent": "ctx",
+    "children": [
+     "a1",
+     "a1-old"
+    ],
+    "message": {
+     "id": "u1",
+     "author": {
+      "role": "user"
+     },
+     "create_time": 1767225601.0,
+     "content": {
+      "content_type": "multimodal_text",
+      "parts": [
+       {
+        "content_type": "image_asset_pointer",
+        "asset_pointer": "file-service://file-abc"
+       },
+       "Plot this chart."
+      ]
+     },
+     "status": "finished_successfully"
+    }
+   },
+   "a1-old": {
+    "id": "a1-old",
+    "parent": "u1",
+    "children": [],
+    "message": {
+     "id": "a1-old",
+     "author": {
+      "role": "assistant"
+     },
+     "create_time": 1767225602.0,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "An abandoned branch."
+      ]
+     },
+     "status": "finished_successfully"
+    }
+   },
+   "a1": {
+    "id": "a1",
+    "parent": "u1",
+    "children": [
+     "t1"
+    ],
+    "message": {
+     "id": "a1",
+     "author": {
+      "role": "assistant"
+     },
+     "create_time": 1767225603.0,
+     "content": {
+      "content_type": "code",
+      "language": "python",
+      "text": "plot(data)"
+     },
+     "status": "finished_successfully",
+     "recipient": "python"
+    }
+   },
+   "t1": {
+    "id": "t1",
+    "parent": "a1",
+    "children": [
+     "a2"
+    ],
+    "message": {
+     "id": "t1",
+     "author": {
+      "role": "tool"
+     },
+     "create_time": 1767225604.0,
+     "content": {
+      "content_type": "execution_output",
+      "text": "<Figure 1>"
+     },
+     "status": "finished_successfully"
+    }
+   },
+   "a2": {
+    "id": "a2",
+    "parent": "t1",
+    "children": [],
+    "message": {
+     "id": "a2",
+     "author": {
+      "role": "assistant"
+     },
+     "create_time": 1767225605.0,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Here is the plot."
+      ]
+     },
+     "status": "finished_successfully"
+    }
+   }
+  }
+ },
+ {
+  "title": "Second chat",
+  "create_time": 1767312000.0,
+  "update_time": 1767312100.0,
+  "conversation_id": "68000000-0000-4000-8000-000000000002",
+  "id": "68000000-0000-4000-8000-000000000002",
+  "current_node": "b1",
+  "mapping": {
+   "root": {
+    "id": "root",
+    "parent": null,
+    "children": [
+     "q"
+    ],
+    "message": null
+   },
+   "q": {
+    "id": "q",
+    "parent": "root",
+    "children": [
+     "b1"
+    ],
+    "message": {
+     "id": "q",
+     "author": {
+      "role": "user"
+     },
+     "create_time": 1767312001.0,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Hi"
+      ]
+     },
+     "status": "finished_successfully"
+    }
+   },
+   "b1": {
+    "id": "b1",
+    "parent": "q",
+    "children": [],
+    "message": {
+     "id": "b1",
+     "author": {
+      "role": "assistant"
+     },
+     "create_time": 1767312002.0,
+     "content": {
+      "content_type": "text",
+      "parts": [
+       "Hello!"
+      ]
+     },
+     "status": "finished_successfully"
+    }
+   }
+  }
+ }
+]

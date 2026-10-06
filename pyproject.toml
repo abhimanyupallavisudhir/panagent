@@ -1,32 +1,53 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "panagent"
 dynamic = ["version"]
-description = "Convert agent conversations and public chat shares through a provider-neutral format"
+description = "Move AI conversations between Claude Code, Codex, ChatGPT, Claude and tavya, and resume them natively"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "panagent contributors" }]
-keywords = ["agents", "claude", "codex", "chatgpt", "conversation"]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Abhimanyu Pallavi Sudhir" }]
+keywords = ["agents", "claude-code", "codex", "chatgpt", "claude", "tavya", "conversation", "transcript", "export"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
-  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Communications :: Chat",
+  "Topic :: Software Development",
+  "Topic :: Utilities",
+  "Typing :: Typed",
 ]
 dependencies = []
 
 [project.optional-dependencies]
 browser = ["playwright>=1.50"]
 
+[project.urls]
+Homepage = "https://github.com/abhimanyupallavisudhir/panagent"
+Source = "https://github.com/abhimanyupallavisudhir/panagent"
+Issues = "https://github.com/abhimanyupallavisudhir/panagent/issues"
+Changelog = "https://github.com/abhimanyupallavisudhir/panagent/blob/master/CHANGELOG.md"
+
 [project.scripts]
 panagent = "panagent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+panagent = ["py.typed"]
 
 [tool.setuptools.dynamic]
 version = {attr = "panagent.__version__"}

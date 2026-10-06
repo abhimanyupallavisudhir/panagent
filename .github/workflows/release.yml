@@ -1,0 +1,89 @@
+# Releases panagent when master carries a version that has no GitHub release
+# yet: merging a version bump is the release. PyPI trusts this workflow in the
+# "pypi" environment of abhimanyupallavisudhir/panagent (trusted publishing),
+# so no token is stored anywhere.
+name: release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - id: version
+        name: Is this version unreleased?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python -c "import re; print(re.search(r'__version__ = \"(.+)\"', open('src/panagent/__init__.py').read())[1])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"; echo "v$version is already released"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"; echo "releasing v$version"
+          fi
+      - if: steps.version.outputs.release == 'true'
+        run: |
+          python -m pip install build twine
+          PYTHONPATH=src python -m unittest discover -s tests
+          python -m build
+          python -m twine check --strict dist/*
+      - if: steps.version.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/panagent/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  github:
+    needs: [build, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Tag and GitHub release with the changelog entry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '$0 ~ "^## " v {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "panagent $VERSION" --notes-file notes.md

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from panagent import __version__
 from panagent.detect import detect_text
-from panagent.errors import AcquisitionError, BrowserRequired
+from panagent.errors import BrowserRequired
 from panagent.readers import read_claude_code, read_codex
 from panagent.web import is_challenge_page, read_chatgpt_share, read_claude_share
 from panagent.writers import write_claude_code, write_codex

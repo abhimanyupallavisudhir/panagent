@@ -49,7 +49,7 @@ class CLITests(unittest.TestCase):
             report = Path(directory) / "report.json"
             result = run_cli("convert", str(FIXTURES / "claude-code.jsonl"), "--to", "codex", "-o", str(output), "--report", str(report))
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("claude-code -> codex", result.stderr)
+            self.assertIn("claude-code-jsonl -> codex", result.stderr)
             records = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(records[0]["type"], "session_meta")
             loss = json.loads(report.read_text())
