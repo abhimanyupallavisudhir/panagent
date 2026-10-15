@@ -91,15 +91,19 @@ class ClaudeNativeCompatibilityTests(unittest.TestCase):
 class _RefusingAPI:
     """An HTTP server on localhost that answers every request with 401 and keeps the bodies."""
 
+    def __init__(self, path: str = "/v1/messages") -> None:
+        self.path = path
+
     def __enter__(self) -> "_RefusingAPI":
         bodies: list[str] = []
         message = threading.Event()
         self.bodies, self.message = bodies, message
+        recorded = self.path
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:  # noqa: N802
                 body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode("utf-8", "replace")
-                if self.path.startswith("/v1/messages"):
+                if self.path.startswith(recorded):
                     bodies.append(body)
                     message.set()
                 payload = b'{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
@@ -131,6 +135,10 @@ def _assert_codex_reads_and_resumes(test: unittest.TestCase, command: list[str])
         # Installed exactly where `panagent convert --install` puts it, so this
         # also proves Codex discovers sessions at that path.
         install(conversation, "codex", cwd="/tmp", session_id=SESSION_ID, home=codex_home)
+        api = _RefusingAPI(path="/v1/responses").__enter__()
+        (codex_home / "config.toml").write_text(
+            f'[model_providers.local]\nname = "local"\nbase_url = "{api.url}/v1"\nwire_api = "responses"\n',
+            encoding="utf-8")
         client = _AppServer(command, codex_home)
         try:
             client.request(
@@ -146,10 +154,25 @@ def _assert_codex_reads_and_resumes(test: unittest.TestCase, command: list[str])
             item_types = [item["type"] for turn in thread["turns"] for item in turn["items"]]
             test.assertIn("userMessage", item_types)
             test.assertIn("agentMessage", item_types)
-            resumed = client.request(3, "thread/resume", {"threadId": SESSION_ID})
+            resumed = client.request(3, "thread/resume", {"threadId": SESSION_ID, "modelProvider": "local"})
             test.assertEqual(resumed["result"]["thread"]["id"], SESSION_ID)
+            # The next turn sends the imported history to the model. Codex
+            # forwards each item's id, and OpenAI looks up any id it did not
+            # issue: "Supplied input item IDs require persisted-item lookup"
+            # (400). An imported item must therefore carry none.
+            client.request(4, "turn/start", {"threadId": SESSION_ID,
+                                             "input": [{"type": "text", "text": "Reply PONG.", "text_elements": []}]})
+            test.assertTrue(api.message.wait(30), "Codex did not call the model")
         finally:
             client.close()
+            api.__exit__()
+        sent = json.loads(api.bodies[0])["input"]
+        # The new turn adds only user and developer items (with ids Codex
+        # issues itself), so every assistant item and tool call here is imported.
+        imported = [item for item in sent if item.get("role") == "assistant"
+                    or item.get("type") in {"function_call", "function_call_output"}]
+        test.assertIn("The greeting is hello.", json.dumps(imported))
+        test.assertEqual([item["id"] for item in imported if "id" in item], [])
 
 
 class _AppServer:

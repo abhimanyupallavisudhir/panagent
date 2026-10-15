@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Codex: imported messages carry no item ids.** Assistant messages written for Codex had an invented `msg_…` id. Codex sends item ids back to the model, and OpenAI's Responses API now looks up any id it did not issue, refusing the turn with `400 Supplied input item IDs require persisted-item lookup`. Codex reads, resumes and forks the history without them. The pinned-Codex compatibility test now runs a turn against a local stand-in for the API and checks what is sent.
+
 ## 0.3.0
 
 - **tavya share links.** `https://tavya.io/share/conversations/…`, and the same path on any self-hosted karmax server, convert like ChatGPT and Claude shares. Message text is kept exactly, including Markdown, code and math.
