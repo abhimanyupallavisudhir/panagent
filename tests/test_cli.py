@@ -71,6 +71,13 @@ class CLITests(unittest.TestCase):
         self.assertEqual(conv["schema"], "https://panagent.dev/schema/conversation/v1")
         self.assertEqual(conv["source"]["provider"], "anthropic")
 
+    def test_gemini_share_response_converts_as_context(self) -> None:
+        for args in ((), ("--from", "gemini-share")):
+            result = run_cli("convert", str(FIXTURES / "gemini-share.txt"), *args, "--to", "claude-code")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("(context)", result.stderr)
+            self.assertIn("centered", result.stdout)
+
     def test_native_output_accepts_an_explicit_destination_session_id(self) -> None:
         destination = "13a24696-e6c4-4f2e-bf29-4234eac1af21"
         for target in ("claude-code", "codex"):
