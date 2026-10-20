@@ -78,6 +78,16 @@ class CLITests(unittest.TestCase):
             self.assertIn("(context)", result.stderr)
             self.assertIn("centered", result.stdout)
 
+    def test_share_request_prints_the_request_to_make(self) -> None:
+        result = run_cli("share-request", "https://chat.qwen.ai/s/b6bb9ca0-8565-4040-8c58-9c45a538be47")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "format": "qwen-share", "site": "Qwen", "method": "GET",
+            "url": "https://chat.qwen.ai/api/v2/chats/share/b6bb9ca0-8565-4040-8c58-9c45a538be47",
+            "headers": {"Accept": "application/json", "Referer": "https://chat.qwen.ai/"}, "body": None})
+        refused = run_cli("share-request", "https://chatgpt.com/share/abc")
+        self.assertEqual(refused.returncode, 2)
+
     def test_native_output_accepts_an_explicit_destination_session_id(self) -> None:
         destination = "13a24696-e6c4-4f2e-bf29-4234eac1af21"
         for target in ("claude-code", "codex"):
