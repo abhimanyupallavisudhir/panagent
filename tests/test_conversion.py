@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -279,6 +280,13 @@ class ShareReaderTests(unittest.TestCase):
         self.assertEqual([item["role"] for item in conv["messages"]], ["user", "assistant"])
         self.assertEqual(conv["source"]["kind"], "public-share-snapshot")
 
+    def test_claude_chat_snapshot_saved_from_the_browser(self) -> None:
+        # The JSON a share page loads from claude.ai/api/chat_snapshots/<id>, saved by a person.
+        conv = read_claude_share(fixture("claude-chat-snapshot.json"))
+        self.assertEqual(conv["title"], "Latent variable experiments")
+        self.assertEqual(conv["source"]["conversation_id"], "e510a898-8e59-4423-b613-12c7c5ac37a5")
+        self.assertEqual([m["role"] for m in conv["messages"]], ["user", "assistant", "tool", "assistant"])
+
     def test_claude_rendered_dom_fallback(self) -> None:
         conv = read_claude_share(fixture("claude-rendered.html"), source_uri="saved.html")
         self.assertEqual(len(conv["messages"]), 2)
@@ -292,6 +300,11 @@ class ShareReaderTests(unittest.TestCase):
     def test_unrendered_claude_share_needs_a_browser(self) -> None:
         with self.assertRaisesRegex(BrowserRequired, "renders only in a browser"):
             read_claude_share(fixture("claude-app-shell.html"))
+        share = "https://claude.ai/share/e510a898-8e59-4423-b613-12c7c5ac37a5"
+        with self.assertRaisesRegex(BrowserRequired, re.escape(
+                "open https://claude.ai/api/chat_snapshots/e510a898-8e59-4423-b613-12c7c5ac37a5"
+                "?rendering_mode=messages&render_all_tools=true in your browser, save it and convert that file")):
+            read_claude_share(fixture("claude-app-shell.html"), source_uri=share)
 
     def test_rendered_claude_share_can_discuss_challenges(self) -> None:
         # Cloudflare's bot-management script loads on ordinary pages, and a
