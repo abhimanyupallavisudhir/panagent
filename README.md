@@ -1,6 +1,6 @@
 # panagent
 
-**Take an AI conversation anywhere.** Turn a ChatGPT, Claude or tavya share link, a ChatGPT or Claude data export, or a Claude Code or Codex session into a session that Claude Code or Codex can resume. One command does it:
+**Take an AI conversation anywhere.** Turn a ChatGPT, Claude, Gemini or tavya share link, a ChatGPT or Claude data export, or a Claude Code or Codex session into a session that Claude Code or Codex can resume. One command does it:
 
 ```console
 $ panagent convert https://chatgpt.com/share/6a781aea-… --to claude --install
@@ -15,6 +15,7 @@ panagent converts through a small provider-neutral format. It keeps source prove
 | Codex session (`~/.codex/sessions/…/rollout-*.jsonl`) | ✓ | ✓ | ✓ | ✓ |
 | ChatGPT share link or data export (`conversations.json`) | ✓ | ✓ | ✓ | ✓ |
 | Claude share link or data export (`conversations.json`) | ✓ | ✓ | ✓ | ✓ |
+| Gemini share link (`gemini.google.com/share/…`, `share.gemini.google/…`, `g.co/gemini/share/…`) | ✓ | ✓ | ✓ | ✓ |
 | tavya share link (`tavya.io/share/conversations/…`, or any karmax server) | ✓ | ✓ | ✓ | ✓ |
 
 ## Install
@@ -23,7 +24,7 @@ panagent converts through a small provider-neutral format. It keeps source prove
 pipx install panagent        # or: uv tool install panagent, or: pip install panagent
 ```
 
-Python 3.10 or later is required. ChatGPT and tavya links need nothing else. Claude share pages sometimes need a real browser (see [Claude share links](#claude-share-links)):
+Python 3.10 or later is required. ChatGPT, Gemini and tavya links need nothing else. Claude share pages sometimes need a real browser (see [Claude share links](#claude-share-links)):
 
 ```bash
 pipx install 'panagent[browser]' && playwright install chromium

@@ -9,7 +9,9 @@ from panagent import __version__
 from panagent.detect import detect_text
 from panagent.errors import BrowserRequired
 from panagent.readers import read_claude_code, read_codex
-from panagent.web import is_challenge_page, read_chatgpt_share, read_claude_share
+from panagent.detect import url_format
+from panagent.errors import FormatError
+from panagent.web import gemini_share_id, gemini_share_request, is_challenge_page, read_chatgpt_share, read_claude_share, read_gemini_share
 from panagent.writers import write_claude_code, write_codex
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -286,6 +288,40 @@ class ShareReaderTests(unittest.TestCase):
         self.assertEqual(conv["title"], "Latent variable experiments")
         self.assertEqual(conv["source"]["conversation_id"], "e510a898-8e59-4423-b613-12c7c5ac37a5")
         self.assertEqual([m["role"] for m in conv["messages"]], ["user", "assistant", "tool", "assistant"])
+
+    def test_gemini_share_rpc_response(self) -> None:
+        # What gemini.google.com's ujx1Bf RPC answers for a share (wire shape of a real one).
+        text = fixture("gemini-share.txt")
+        self.assertEqual(detect_text(text), "gemini-share")
+        conv = read_gemini_share(text, source_uri="https://gemini.google.com/share/fixture")
+        self.assertEqual(conv["title"], "Self-location fixture")
+        self.assertEqual(conv["environment"]["model"], "3.6 Flash")
+        self.assertEqual([(m["role"], m["content"][0]["text"]) for m in conv["messages"]], [
+            ("user", "What is the self-location problem?"),
+            ("assistant", "It is the problem of **centered** information."),
+            ("user", "And Updateless Decision Theory?"),
+            ("assistant", "UDT chooses a policy before observing."),
+        ])
+        self.assertEqual(len({m["id"] for m in conv["messages"]}), 4)
+        self.assertEqual(conv["created_at"], "2026-10-19T08:53:20.500000Z")
+        self.assertEqual(conv["source"]["kind"], "public-share-snapshot")
+
+    def test_gemini_share_unavailable(self) -> None:
+        with self.assertRaisesRegex(FormatError, "deleted or unshared"):
+            read_gemini_share(fixture("gemini-share-unavailable.txt"))
+
+    def test_gemini_share_links(self) -> None:
+        for url in ("https://gemini.google.com/share/50a32fbbfd3c", "https://share.gemini.google/4gF2GfgiLKzw",
+                    "https://g.co/gemini/share/50a32fbbfd3c"):
+            self.assertEqual(url_format(url), "gemini-share", url)
+        self.assertEqual(gemini_share_id("https://gemini.google.com/share/50a32fbbfd3c?social_preview=false"), "50a32fbbfd3c")
+        self.assertIsNone(gemini_share_id("https://share.gemini.google/4gF2GfgiLKzw"))
+        self.assertIsNone(gemini_share_id("https://gemini.google.com.evil.example/share/x"))
+        url, body, headers = gemini_share_request("50a32fbbfd3c")
+        self.assertIn("rpcids=ujx1Bf", url)
+        self.assertIn("source-path=%2Fshare%2F50a32fbbfd3c", url)
+        self.assertEqual(headers["X-Same-Domain"], "1")
+        self.assertIn(b"f.req=", body)
 
     def test_claude_rendered_dom_fallback(self) -> None:
         conv = read_claude_share(fixture("claude-rendered.html"), source_uri="saved.html")
