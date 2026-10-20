@@ -27,7 +27,21 @@ panagent convert 'https://claude.ai/share/…' --to codex \
 
 Only expose Chrome debugging on loopback. A CDP endpoint can control every page in that browser profile. Panagent opens its own tab, does not request cookies/tokens, and does not automate the human-verification checkbox.
 
-The remaining options are useful when browser-assisted extraction cannot recognize a provider DOM change.
+## Save the share's conversation file
+
+Without browser automation, open the JSON the share page loads, in your own browser, and save it (Ctrl+S / ⌘S):
+
+```text
+https://claude.ai/api/chat_snapshots/<share id>?rendering_mode=messages&render_all_tools=true
+```
+
+`<share id>` is the UUID after `/share/`. The file keeps tool calls and thinking blocks, which the rendered page does not:
+
+```bash
+panagent convert <share id>.json --to codex -o imported.jsonl
+```
+
+The remaining options are useful when that file cannot be saved or browser-assisted extraction cannot recognize a provider DOM change.
 
 ## Option 1: one-conversation JSON export
 
