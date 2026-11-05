@@ -132,13 +132,15 @@ def _assert_codex_reads_and_resumes(test: unittest.TestCase, command: list[str])
     conversation = read_claude_code((FIXTURES / "claude-code.jsonl").read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as directory:
         codex_home = Path(directory)
-        # Installed exactly where `panagent convert --install` puts it, so this
-        # also proves Codex discovers sessions at that path.
-        install(conversation, "codex", cwd="/tmp", session_id=SESSION_ID, home=codex_home)
         api = _RefusingAPI(path="/v1/responses").__enter__()
         (codex_home / "config.toml").write_text(
+            f'model_provider = "local"\n\n'
             f'[model_providers.local]\nname = "local"\nbase_url = "{api.url}/v1"\nwire_api = "responses"\n',
             encoding="utf-8")
+        # Installed exactly where `panagent convert --install` puts it, so this
+        # also proves Codex discovers sessions at that path; Codex 0.166+ resumes
+        # it only because it is saved under the home's provider.
+        install(conversation, "codex", cwd="/tmp", session_id=SESSION_ID, home=codex_home)
         client = _AppServer(command, codex_home)
         try:
             client.request(
