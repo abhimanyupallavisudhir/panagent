@@ -61,6 +61,15 @@ class NativeReaderTests(unittest.TestCase):
         explicit = fixture("claude-code-titled.jsonl") + json.dumps({"type": "custom-title", "customTitle": "Renamed"}) + "\n"
         self.assertEqual(read_claude_code(explicit)["title"], "Renamed")
 
+    def test_claude_code_bookkeeping_records_are_silent(self) -> None:
+        # Claude Code 2.1.300+ records every API request (api-request, -shape, -blob)
+        # beside the conversation, plus session-owner, atis-latch and cost-state.
+        conv = read_claude_code(fixture("claude-code-2.1.318.jsonl"))
+        self.assertEqual([block["text"] for item in conv["messages"] for block in item["content"]],
+                         ["Reply with exactly: READY", "READY"])
+        self.assertEqual(conv["title"], "Ready response")
+        self.assertEqual(conv["warnings"], [])
+
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
         self.assertEqual(conv["id"], "11111111-1111-4111-8111-111111111111")

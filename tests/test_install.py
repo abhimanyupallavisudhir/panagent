@@ -48,6 +48,17 @@ class InstallTests(unittest.TestCase):
         meta = json.loads(installed.path.read_text().splitlines()[0])
         self.assertEqual(meta["payload"]["id"], installed.session_id)
 
+    def test_codex_rollout_uses_the_homes_configured_provider(self) -> None:
+        # Codex 0.166+ resumes a thread only under the provider it was saved with.
+        home = self.root / "codex"
+        home.mkdir()
+        (home / "config.toml").write_text('model = "qwen3"\nmodel_provider = "ollama"\n\n'
+                                          '[model_providers.other]\nmodel_provider = "not-this"\n')
+        meta = json.loads(panagent.install(self.conv, "codex", home=home).path.read_text().splitlines()[0])
+        self.assertEqual(meta["payload"]["model_provider"], "ollama")
+        bare = json.loads(panagent.install(self.conv, "codex", home=self.root / "fresh").path.read_text().splitlines()[0])
+        self.assertEqual(bare["payload"]["model_provider"], "openai")
+
     def test_environment_selects_the_cli_home(self) -> None:
         with patch.dict(os.environ, {"CODEX_HOME": str(self.root / "env-codex")}):
             installed = panagent.install(self.conv, "codex")
