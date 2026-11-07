@@ -73,6 +73,10 @@ class NativeReaderTests(unittest.TestCase):
         tools_used = {"type": "tools-used", "tools": ["Bash", "ToolSearch"], "sessionId": "22222222-2222-4222-8222-222222222222"}
         conv = read_claude_code(fixture("claude-code-2.1.318.jsonl") + json.dumps(tools_used) + "\n")
         self.assertEqual(conv["warnings"], [])
+        # A resumed session's connector isolation side (seen in real 2.1.319 sessions).
+        latch = {"type": "isolation-latch", "side": "connectors", "sessionId": "22222222-2222-4222-8222-222222222222"}
+        conv = read_claude_code(fixture("claude-code-2.1.318.jsonl") + json.dumps(latch) + "\n")
+        self.assertEqual(conv["warnings"], [])
 
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
