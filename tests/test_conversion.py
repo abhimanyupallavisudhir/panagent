@@ -69,6 +69,10 @@ class NativeReaderTests(unittest.TestCase):
                          ["Reply with exactly: READY", "READY"])
         self.assertEqual(conv["title"], "Ready response")
         self.assertEqual(conv["warnings"], [])
+        # After a turn that called tools (2.1.318 and later): the session's tool names so far.
+        tools_used = {"type": "tools-used", "tools": ["Bash", "ToolSearch"], "sessionId": "22222222-2222-4222-8222-222222222222"}
+        conv = read_claude_code(fixture("claude-code-2.1.318.jsonl") + json.dumps(tools_used) + "\n")
+        self.assertEqual(conv["warnings"], [])
 
     def test_claude_code_reader_preserves_tools_and_warns_on_snapshot(self) -> None:
         conv = read_claude_code(fixture("claude-code.jsonl"), source_uri="fixture")
