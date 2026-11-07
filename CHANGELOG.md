@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Codex: `--install` saves the conversation under the home's provider.** Codex 0.166 resumes a thread only under the provider it was saved with ("This chat uses openai, but your current provider is ollama"). An installed session now records the destination home's `model_provider` (from its `config.toml`; `openai` when unset). Converting without `--install` still writes `openai`.
-- **Claude Code 2.1.300+ sessions convert without warnings.** Its transcripts add `api-request`, `api-request-shape` and `api-request-blob` records (each request's system prompt, tools and parameters), plus `session-owner`, `atis-latch`, `cost-state` and, after a turn that called tools, `tools-used`. They are skipped silently, like `queue-operation`, instead of one "unrecognized record" warning per request.
+- **Claude Code 2.1.300+ sessions convert without warnings.** Its transcripts add `api-request`, `api-request-shape` and `api-request-blob` records (each request's system prompt, tools and parameters), plus `session-owner`, `atis-latch`, `isolation-latch`, `cost-state` and, after a turn that called tools, `tools-used`. They are skipped silently, like `queue-operation`, instead of one "unrecognized record" warning per request.
 - **Codex: imported messages carry no item ids.** Assistant messages written for Codex had an invented `msg_…` id. Codex sends item ids back to the model, and OpenAI's Responses API now looks up any id it did not issue, refusing the turn with `400 Supplied input item IDs require persisted-item lookup`. Codex reads, resumes and forks the history without them. The pinned-Codex compatibility test now runs a turn against a local stand-in for the API and checks what is sent.
 
 ## 0.3.0
