@@ -114,6 +114,14 @@ class NativeReaderTests(unittest.TestCase):
         self.assertIn("tool_result", block_types(conv))
         self.assertIn("codex_turn_context_target_specific", {item["code"] for item in conv["warnings"]})
 
+    def test_codex_tool_declarations_convert_silently(self) -> None:
+        # GPT-6.1 rollouts (Codex 0.167) declare the tool catalog in history; the target declares its own.
+        declared = {"type": "response_item", "payload": {"type": "additional_tools", "id": "at_1", "role": "developer",
+                    "tools": [{"type": "namespace", "name": "functions", "description": "", "tools": []}]}}
+        conv = read_codex(fixture("codex.jsonl") + "\n" + json.dumps(declared) + "\n")
+        self.assertEqual(len(conv["messages"]), 5)
+        self.assertNotIn("codex_item_not_represented", {item["code"] for item in conv["warnings"]})
+
 
 class CodexContextTests(unittest.TestCase):
     """karmax legibench3#18: a 44 MB Codex session became an 11.9M-token Claude prompt."""
